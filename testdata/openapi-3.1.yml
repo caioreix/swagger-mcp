@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: Widget API
+  version: 1.0.0
+paths:
+  /widgets:
+    get:
+      summary: List widgets
+      operationId: listWidgets
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Widget'
+    post:
+      summary: Create widget
+      operationId: createWidget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WidgetCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+components:
+  schemas:
+    Widget:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    WidgetCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string

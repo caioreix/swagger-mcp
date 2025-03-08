@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/pets",
+    "method": "GET",
+    "description": "Returns all pets from the system that the user has access to",
+    "operationId": "findPets"
+  },
+  {
+    "path": "/pets",
+    "method": "POST",
+    "description": "Creates a new pet in the store",
+    "operationId": "addPet"
+  },
+  {
+    "path": "/pets/{id}",
+    "method": "GET",
+    "description": "Returns a pet based on a single ID",
+    "operationId": "findPetById"
+  },
+  {
+    "path": "/pets/{id}",
+    "method": "DELETE",
+    "description": "Deletes a pet by ID",
+    "operationId": "deletePet"
+  }
+]
