@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/caioreix/swagger-mcp/internal/config"
 	"github.com/caioreix/swagger-mcp/internal/openapi"
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
@@ -63,7 +64,7 @@ func TestCachedSwaggerProxyToolsHaveValidArraySchemas(t *testing.T) {
 		t.Fatalf("ReadDefinitionFromFile: %v", err)
 	}
 
-	tools, err := buildProxyTools(document, "http://localhost", nil)
+	tools, err := buildProxyTools(document, "http://localhost", nil, "", config.AuthConfig{}, "")
 	if err != nil {
 		t.Fatalf("buildProxyTools: %v", err)
 	}

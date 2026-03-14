@@ -27,6 +27,7 @@ type serveOptions struct {
 	excludeMethods string
 	sseHeaders     string
 	httpHeaders    string
+	configFile     string
 	enableUI       bool
 	proxyMode      bool
 }
@@ -63,6 +64,8 @@ func (o *serveOptions) addFlags(cmd *cobra.Command) {
 		"Request headers forwarded from SSE clients to proxy API calls — comma-separated (env: SWAGGER_MCP_SSE_HEADERS)")
 	f.StringVar(&o.httpHeaders, "http-headers", "",
 		"Request headers forwarded from StreamableHTTP clients to proxy API calls — comma-separated (env: SWAGGER_MCP_HTTP_HEADERS)")
+	f.StringVar(&o.configFile, "config", "",
+		"Path to a swagger-mcp.yaml file defining multiple API profiles for proxy mode (env: SWAGGER_MCP_CONFIG)")
 
 	// Deprecated alias kept for backward compatibility.
 	f.StringVar(&o.swaggerURL, "swaggerUrl", "", "Deprecated: use --swagger-url instead")
@@ -94,7 +97,7 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 		logLevel = "info"
 	}
 
-	return config.Config{
+	cfg := config.Config{
 		SwaggerURL: envOr(cmd, "swagger-url", o.swaggerURL, "SWAGGER_MCP_SWAGGER_URL"),
 		LogLevel:   logLevel,
 		WorkingDir: workingDir,
@@ -113,7 +116,25 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 		Headers:     envOr(cmd, "headers", o.headers, "SWAGGER_MCP_HEADERS"),
 		SseHeaders:  envOr(cmd, "sse-headers", o.sseHeaders, "SWAGGER_MCP_SSE_HEADERS"),
 		HttpHeaders: envOr(cmd, "http-headers", o.httpHeaders, "SWAGGER_MCP_HTTP_HEADERS"),
-	}, nil
+	}
+
+	configPath := envOr(cmd, "config", o.configFile, "SWAGGER_MCP_CONFIG")
+	if configPath == "" {
+		// Auto-discover the default config file in the working directory.
+		defaultPath := filepath.Join(workingDir, config.DefaultMultiAPIConfigFile)
+		if _, err := os.Stat(defaultPath); err == nil {
+			configPath = defaultPath
+		}
+	}
+	if configPath != "" {
+		apis, err := config.LoadMultiAPIConfig(configPath)
+		if err != nil {
+			return config.Config{}, err
+		}
+		cfg.APIs = apis
+	}
+
+	return cfg, nil
 }
 
 // envOr returns the flag value when the flag was explicitly set by the user,

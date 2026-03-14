@@ -43,9 +43,17 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*server, error) {
 		filter:   filter,
 	}
 
+	// Single-API proxy mode (CLI flags).
 	if cfg.ProxyMode {
 		if err := s.initProxyTools(); err != nil {
 			return nil, fmt.Errorf("initialize proxy tools: %w", err)
+		}
+	}
+
+	// Multi-API proxy mode (config file).
+	if len(cfg.APIs) > 0 {
+		if err := s.initMultiAPIProxyTools(); err != nil {
+			return nil, fmt.Errorf("initialize multi-api proxy tools: %w", err)
 		}
 	}
 
@@ -74,13 +82,68 @@ func (s *server) initProxyTools() error {
 		return fmt.Errorf("no base URL available: provide --base-url or ensure the swagger spec defines one")
 	}
 
-	tools, err := buildProxyTools(document, baseURL, s.filter)
+	tools, err := buildProxyTools(document, baseURL, s.filter, "", s.cfg.Auth, s.cfg.Headers)
 	if err != nil {
 		return err
 	}
 
-	s.proxyTools = tools
+	s.proxyTools = append(s.proxyTools, tools...)
 	s.logger.Info("proxy mode enabled", "tools_registered", len(tools), "base_url", baseURL)
+	return nil
+}
+
+func (s *server) initMultiAPIProxyTools() error {
+	for _, api := range s.cfg.APIs {
+		if err := s.initAPIProxyTools(api); err != nil {
+			return fmt.Errorf("initialize proxy tools for API %q: %w", api.Name, err)
+		}
+	}
+	return nil
+}
+
+func (s *server) initAPIProxyTools(api config.APIConfig) error {
+	apiResolver := openapi.NewSourceResolver(s.cfg.WorkingDir, api.SwaggerURL, s.logger)
+	if err := apiResolver.Preload(); err != nil {
+		return fmt.Errorf("load swagger spec: %w", err)
+	}
+
+	document, err := apiResolver.Load("")
+	if err != nil {
+		return fmt.Errorf("parse swagger definition: %w", err)
+	}
+
+	baseURL := api.BaseURL
+	if baseURL == "" {
+		baseURL = openapi.ExtractBaseURL(document)
+	} else {
+		if basePath := openapi.ExtractBasePath(document); basePath != "" {
+			trimmed := strings.TrimRight(baseURL, "/")
+			if !strings.HasSuffix(trimmed, strings.TrimRight(basePath, "/")) {
+				baseURL = trimmed + basePath
+			}
+		}
+	}
+	if baseURL == "" {
+		return fmt.Errorf("no base URL available: set \"base_url\" or ensure the swagger spec defines one")
+	}
+
+	filter, err := openapi.NewEndpointFilter(
+		api.Filter.IncludePaths,
+		api.Filter.ExcludePaths,
+		api.Filter.IncludeMethods,
+		api.Filter.ExcludeMethods,
+	)
+	if err != nil {
+		return fmt.Errorf("compile endpoint filters: %w", err)
+	}
+
+	tools, err := buildProxyTools(document, baseURL, filter, api.Name, api.Auth, api.Headers)
+	if err != nil {
+		return err
+	}
+
+	s.proxyTools = append(s.proxyTools, tools...)
+	s.logger.Info("multi-api proxy tools registered", "api", api.Name, "tools_registered", len(tools), "base_url", baseURL)
 	return nil
 }
 
@@ -139,7 +202,7 @@ func (s *server) handleInitialize(id any) ([]byte, error) {
 	s.logger.Info("initializing MCP session")
 
 	instructions := "Use getSwaggerDefinition to download a Swagger/OpenAPI document, then call the Swagger tools or the add-endpoint prompt to inspect the API and generate scaffolding."
-	if s.cfg.ProxyMode {
+	if s.cfg.ProxyMode || len(s.cfg.APIs) > 0 {
 		instructions = "This server is running in proxy mode. API endpoints are available as tools — call them directly to interact with the API. " + instructions
 	}
 

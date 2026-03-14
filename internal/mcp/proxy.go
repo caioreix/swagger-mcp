@@ -20,10 +20,16 @@ type proxyTool struct {
 	Method     string
 	Path       string
 	Operation  map[string]any
+	// Per-API context (populated when using multi-API config).
+	APIName string
+	BaseURL string
+	Auth    config.AuthConfig
+	Headers string
 }
 
 // buildProxyTools creates dynamic MCP tool definitions for each filtered endpoint.
-func buildProxyTools(document map[string]any, baseURL string, filter *openapi.EndpointFilter) ([]proxyTool, error) {
+// apiName prefixes tool names (used in multi-API mode); pass "" for single-API mode.
+func buildProxyTools(document map[string]any, baseURL string, filter *openapi.EndpointFilter, apiName string, auth config.AuthConfig, headers string) ([]proxyTool, error) {
 	endpoints, err := openapi.ListEndpoints(document)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
@@ -38,7 +44,7 @@ func buildProxyTools(document map[string]any, baseURL string, filter *openapi.En
 			continue
 		}
 
-		toolName := proxyToolName(ep)
+		toolName := proxyToolName(ep, apiName)
 		description := proxyToolDescription(ep)
 		inputSchema := proxyInputSchema(document, operation)
 
@@ -51,22 +57,32 @@ func buildProxyTools(document map[string]any, baseURL string, filter *openapi.En
 			Method:    ep.Method,
 			Path:      ep.Path,
 			Operation: operation,
+			APIName:   apiName,
+			BaseURL:   baseURL,
+			Auth:      auth,
+			Headers:   headers,
 		})
 	}
 	return tools, nil
 }
 
-func proxyToolName(ep openapi.Endpoint) string {
+func proxyToolName(ep openapi.Endpoint, apiName string) string {
+	var base string
 	if ep.OperationID != "" {
 		name := strings.ReplaceAll(ep.OperationID, "_", "-")
 		name = strings.ReplaceAll(name, " ", "-")
-		return strings.ToLower(name)
+		base = strings.ToLower(name)
+	} else {
+		path := strings.ReplaceAll(ep.Path, "/", "-")
+		path = strings.ReplaceAll(path, "{", "")
+		path = strings.ReplaceAll(path, "}", "")
+		path = strings.Trim(path, "-")
+		base = strings.ToLower(ep.Method) + "-" + path
 	}
-	path := strings.ReplaceAll(ep.Path, "/", "-")
-	path = strings.ReplaceAll(path, "{", "")
-	path = strings.ReplaceAll(path, "}", "")
-	path = strings.Trim(path, "-")
-	return strings.ToLower(ep.Method) + "-" + path
+	if apiName != "" {
+		return apiName + "_" + base
+	}
+	return base
 }
 
 func proxyToolDescription(ep openapi.Endpoint) string {
@@ -262,7 +278,21 @@ func containsString(values []string, target string) bool {
 
 // executeProxyCall executes an HTTP request to the target API for a proxy tool.
 func executeProxyCall(tool proxyTool, arguments map[string]any, baseURL string, cfg config.Config, extraHeaders map[string]string) (map[string]any, error) {
-	targetURL, err := buildProxyURL(tool.Path, baseURL, tool.Operation, arguments)
+	// Use per-tool base URL and auth when set (multi-API mode), otherwise fall back to global config.
+	effectiveBaseURL := tool.BaseURL
+	if effectiveBaseURL == "" {
+		effectiveBaseURL = baseURL
+	}
+	effectiveAuth := tool.Auth
+	if effectiveAuth == (config.AuthConfig{}) {
+		effectiveAuth = cfg.Auth
+	}
+	effectiveHeaders := tool.Headers
+	if effectiveHeaders == "" {
+		effectiveHeaders = cfg.Headers
+	}
+
+	targetURL, err := buildProxyURL(tool.Path, effectiveBaseURL, tool.Operation, arguments)
 	if err != nil {
 		return nil, fmt.Errorf("build URL: %w", err)
 	}
@@ -289,8 +319,8 @@ func executeProxyCall(tool proxyTool, arguments map[string]any, baseURL string, 
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	applyProxyAuth(req, cfg.Auth)
-	applyCustomHeaders(req, cfg.Headers)
+	applyProxyAuth(req, effectiveAuth)
+	applyCustomHeaders(req, effectiveHeaders)
 	applyExtraHeaders(req, extraHeaders)
 
 	// Add header parameters from arguments

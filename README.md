@@ -172,6 +172,7 @@ Open `http://localhost:8080/` to browse tools, fill in parameters, and view JSON
 | `--exclude-methods` | — | `SWAGGER_MCP_EXCLUDE_METHODS` | HTTP methods to hide: `DELETE,PUT` |
 | `--sse-headers` | — | `SWAGGER_MCP_SSE_HEADERS` | Headers forwarded from SSE clients to API |
 | `--http-headers` | — | `SWAGGER_MCP_HTTP_HEADERS` | Headers forwarded from StreamableHTTP clients to API |
+| `--config` | — | `SWAGGER_MCP_CONFIG` | Path to a `swagger-mcp.yaml` multi-API config file |
 
 > **Precedence**: CLI flags > environment variables > defaults. Legacy alias `--swaggerUrl` is still accepted but deprecated.
 
@@ -203,6 +204,69 @@ cp .env.example .env
 2. `swaggerFilePath` parameter passed directly to a tool
 3. `SWAGGER_FILEPATH` in a `.swagger-mcp` file in the working directory
 4. Error — no source configured
+
+---
+
+### Multi-API Configuration
+
+To proxy **multiple APIs simultaneously**, create a `.swagger-mcp.yaml` file in your project root (or pass `--config path/to/file.yaml`). Each entry generates its own set of proxy tools, prefixed with the API name:
+
+```yaml
+# .swagger-mcp.yaml
+apis:
+  - name: petstore
+    swagger_url: https://petstore.swagger.io/v2/swagger.json
+    base_url: https://petstore.swagger.io/v2   # optional override
+    auth:
+      bearer_token: ${PETSTORE_TOKEN}           # ${ENV_VAR} interpolation
+    headers: "X-Tenant=acme"
+    include_paths: "^/pet.*"
+    exclude_methods: "DELETE"
+
+  - name: github
+    swagger_url: ./specs/github.yaml            # local file also works
+    auth:
+      api_key: ${GITHUB_TOKEN}
+      api_key_header: Authorization
+      api_key_in: header                        # "header", "query", or "cookie"
+
+  - name: partner
+    swagger_url: https://partner.example.com/openapi.yaml
+    auth:
+      oauth2_token_url: https://auth.partner.example.com/token
+      oauth2_client_id: ${PARTNER_CLIENT_ID}
+      oauth2_client_secret: ${PARTNER_CLIENT_SECRET}
+      oauth2_scopes: read:data,write:data
+```
+
+**Tool naming:** proxy tools are prefixed with the API name — `petstore_addPet`, `github_listRepos`, etc. — so all APIs can coexist in the same MCP session without name conflicts.
+
+**Credentials:** use `${ENV_VAR}` anywhere in the config file. Values are expanded at startup from environment variables (or `.env`), keeping secrets out of the YAML file.
+
+**Config file discovery order:** `--config` flag → `SWAGGER_MCP_CONFIG` env var → `.swagger-mcp.yaml` in working directory.
+
+**Backward compatible:** the `--proxy-mode` flag and all CLI authentication env vars continue to work exactly as before for single-API usage.
+
+See [`swagger-mcp.example.yaml`](./swagger-mcp.example.yaml) for a fully-documented example with all authentication modes.
+
+| Field | Description |
+|---|---|
+| `name` | **Required.** Unique identifier; used as tool name prefix |
+| `swagger_url` | URL or local path to the Swagger/OpenAPI spec |
+| `base_url` | Override the base URL from the spec |
+| `auth.bearer_token` | Bearer / JWT token |
+| `auth.api_key` | API key value |
+| `auth.api_key_header` | Header name for the key (default: `X-API-Key`) |
+| `auth.api_key_in` | `header`, `query`, or `cookie` (default: `header`) |
+| `auth.basic_user` / `auth.basic_pass` | HTTP Basic auth credentials |
+| `auth.oauth2_token_url` | OAuth2 token endpoint |
+| `auth.oauth2_client_id` / `auth.oauth2_client_secret` | OAuth2 client credentials |
+| `auth.oauth2_scopes` | OAuth2 scopes (comma-separated) |
+| `headers` | Static headers for every request: `Key=Val,Key2=Val2` |
+| `include_paths` | Comma-separated regex patterns for paths to expose |
+| `exclude_paths` | Comma-separated regex patterns for paths to hide |
+| `include_methods` | HTTP methods to expose: `GET,POST` |
+| `exclude_methods` | HTTP methods to hide: `DELETE,PUT` |
 
 ---
 
@@ -435,4 +499,3 @@ rm swagger-cache/<hash>.json swagger-cache/<hash>.metadata.json
 ## 📄 License
 
 MIT — see [LICENSE](./LICENSE) for details.
-

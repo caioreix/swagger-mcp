@@ -1,0 +1,56 @@
+# swagger-mcp.yaml — Multi-API Configuration Example
+#
+# This file enables swagger-mcp to proxy multiple APIs simultaneously.
+# Each entry in the "apis" list generates its own set of MCP proxy tools,
+# prefixed with the API name: {name}_{operationId}
+#
+# Placement: put this file in your project root and swagger-mcp will
+# auto-discover it. Or specify a custom path with --config / SWAGGER_MCP_CONFIG.
+#
+# Credentials: use ${ENV_VAR} anywhere to avoid storing secrets in this file.
+
+apis:
+  # ── Petstore (Bearer token auth) ─────────────────────────────────────────
+  - name: petstore
+    swagger_url: https://petstore.swagger.io/v2/swagger.json
+    # base_url overrides the server URL from the spec (useful for staging envs)
+    base_url: https://petstore.swagger.io/v2
+    auth:
+      bearer_token: ${PETSTORE_TOKEN}
+    # Static headers added to every proxy request for this API
+    headers: "X-Tenant=acme,X-Version=v2"
+    # Expose only pet-related endpoints
+    include_paths: "^/pet.*"
+    # Hide destructive operations
+    exclude_methods: "DELETE"
+
+  # ── GitHub API (API key in header) ───────────────────────────────────────
+  - name: github
+    swagger_url: ./specs/github.yaml        # local file path also supported
+    auth:
+      api_key: ${GITHUB_TOKEN}
+      api_key_header: Authorization          # header name (default: X-API-Key)
+      api_key_in: header                     # "header", "query", or "cookie"
+
+  # ── Internal service (Basic auth) ────────────────────────────────────────
+  - name: internal
+    swagger_url: https://internal.corp/api/swagger.json
+    base_url: https://internal.corp/api
+    auth:
+      basic_user: ${INTERNAL_USER}
+      basic_pass: ${INTERNAL_PASS}
+    # Only expose read operations
+    include_methods: "GET"
+
+  # ── OAuth2 client credentials ─────────────────────────────────────────────
+  - name: partner
+    swagger_url: https://partner.example.com/openapi.yaml
+    auth:
+      oauth2_token_url: https://auth.partner.example.com/token
+      oauth2_client_id: ${PARTNER_CLIENT_ID}
+      oauth2_client_secret: ${PARTNER_CLIENT_SECRET}
+      oauth2_scopes: read:data,write:data   # comma-separated
+
+  # ── Minimal entry (no auth, local spec) ──────────────────────────────────
+  - name: local
+    swagger_url: ./openapi.json
