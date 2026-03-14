@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -79,9 +80,7 @@ func collectProperties(schema map[string]any, document map[string]any) (map[stri
 
 func mergeSchemaProperties(properties map[string]any, required map[string]bool, schema map[string]any) {
 	if schemaProperties, ok := schema["properties"].(map[string]any); ok {
-		for propertyName, propertySchema := range schemaProperties {
-			properties[propertyName] = propertySchema
-		}
+		maps.Copy(properties, schemaProperties)
 	}
 	if requiredList, ok := schema["required"].([]any); ok {
 		for _, rawValue := range requiredList {
@@ -119,9 +118,7 @@ func goType(schema map[string]any, document map[string]any, indent string) strin
 				}
 			}
 			if properties, ok := subSchema["properties"].(map[string]any); ok {
-				for propertyName, propertySchema := range properties {
-					mergedProperties[propertyName] = propertySchema
-				}
+				maps.Copy(mergedProperties, properties)
 			}
 			if requiredValues, ok := subSchema["required"].([]any); ok {
 				required = append(required, requiredValues...)

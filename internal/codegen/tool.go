@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -149,7 +150,7 @@ func generateToolName(method, endpointPath, operationID string, includeAPIInName
 	}
 
 	segments := make([]string, 0)
-	for _, segment := range strings.Split(cleanPath, "/") {
+	for segment := range strings.SplitSeq(cleanPath, "/") {
 		if segment != "" {
 			segments = append(segments, segment)
 		}
@@ -172,8 +173,8 @@ func generateToolName(method, endpointPath, operationID string, includeAPIInName
 
 		processed := segment
 		if singularizeResourceNames && index == len(segments)-1 && strings.HasSuffix(processed, "s") {
-			if strings.HasSuffix(processed, "ies") {
-				processed = strings.TrimSuffix(processed, "ies") + "y"
+			if before, ok := strings.CutSuffix(processed, "ies"); ok {
+				processed = before + "y"
 			} else {
 				processed = strings.TrimSuffix(processed, "s")
 			}
@@ -323,9 +324,7 @@ func processSchema(document map[string]any, schema map[string]any) map[string]an
 			}
 			processed := processSchema(document, subSchema)
 			if properties, ok := processed["properties"].(map[string]any); ok {
-				for key, value := range properties {
-					mergedProperties[key] = value
-				}
+				maps.Copy(mergedProperties, properties)
 			}
 			if requiredValues, ok := processed["required"].([]string); ok {
 				for _, value := range requiredValues {

@@ -14,7 +14,7 @@ import (
 
 func newGenerateServerCmd(stderr io.Writer) *cobra.Command {
 	var (
-		swaggerURL string
+		swaggerURL  string
 		swaggerFile string
 		moduleName  string
 		transports  string
@@ -51,7 +51,7 @@ Example:
 
 			var transportModes []string
 			if transports != "" {
-				for _, t := range strings.Split(transports, ",") {
+				for t := range strings.SplitSeq(transports, ",") {
 					t = strings.TrimSpace(t)
 					if t != "" {
 						transportModes = append(transportModes, t)
@@ -61,7 +61,7 @@ Example:
 
 			var endpointList []string
 			if endpoints != "" {
-				for _, e := range strings.Split(endpoints, ",") {
+				for e := range strings.SplitSeq(endpoints, ",") {
 					e = strings.TrimSpace(e)
 					if e != "" {
 						endpointList = append(endpointList, e)

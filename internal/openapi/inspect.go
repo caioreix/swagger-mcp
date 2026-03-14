@@ -137,8 +137,8 @@ func ResolveRef(document map[string]any, ref string) (any, error) {
 		return nil, fmt.Errorf("unsupported reference %q", ref)
 	}
 	current := any(document)
-	parts := strings.Split(strings.TrimPrefix(ref, "#/"), "/")
-	for _, part := range parts {
+	parts := strings.SplitSeq(strings.TrimPrefix(ref, "#/"), "/")
+	for part := range parts {
 		part = strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")
 		object, ok := asMap(current)
 		if !ok {
@@ -306,16 +306,16 @@ func ExtractBasePath(document map[string]any) string {
 
 // SecurityScheme represents a parsed security scheme from the OpenAPI document.
 type SecurityScheme struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`        // "apiKey", "http", "oauth2", "openIdConnect"
-	In          string `json:"in"`          // "header", "query", "cookie" (for apiKey)
-	ParamName   string `json:"paramName"`   // the header/query parameter name (for apiKey)
-	Scheme      string `json:"scheme"`      // "bearer", "basic" (for http)
-	BearerFmt   string `json:"bearerFormat,omitempty"`
-	FlowType    string `json:"flowType,omitempty"`    // "clientCredentials", "authorizationCode", etc.
-	TokenURL    string `json:"tokenUrl,omitempty"`     // for oauth2
-	AuthURL     string `json:"authorizationUrl,omitempty"`
-	Scopes      map[string]string `json:"scopes,omitempty"`
+	Name      string            `json:"name"`
+	Type      string            `json:"type"`      // "apiKey", "http", "oauth2", "openIdConnect"
+	In        string            `json:"in"`        // "header", "query", "cookie" (for apiKey)
+	ParamName string            `json:"paramName"` // the header/query parameter name (for apiKey)
+	Scheme    string            `json:"scheme"`    // "bearer", "basic" (for http)
+	BearerFmt string            `json:"bearerFormat,omitempty"`
+	FlowType  string            `json:"flowType,omitempty"` // "clientCredentials", "authorizationCode", etc.
+	TokenURL  string            `json:"tokenUrl,omitempty"` // for oauth2
+	AuthURL   string            `json:"authorizationUrl,omitempty"`
+	Scopes    map[string]string `json:"scopes,omitempty"`
 }
 
 // SecurityRequirement maps scheme name to required scopes.

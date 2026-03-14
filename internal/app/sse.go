@@ -130,7 +130,7 @@ func parseHeaderNames(s string) []string {
 		return nil
 	}
 	var names []string
-	for _, name := range strings.Split(s, ",") {
+	for name := range strings.SplitSeq(s, ",") {
 		if name = strings.TrimSpace(name); name != "" {
 			names = append(names, name)
 		}

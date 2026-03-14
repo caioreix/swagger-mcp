@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 )
@@ -152,9 +153,7 @@ func parseYAMLList(lines []yamlLine, index *int, indent int) ([]any, error) {
 				if err != nil {
 					return nil, err
 				}
-				for extraKey, extraValue := range extra {
-					itemMap[extraKey] = extraValue
-				}
+				maps.Copy(itemMap, extra)
 			}
 			result = append(result, itemMap)
 		default:

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -256,12 +257,7 @@ func addSchemaProperties(document map[string]any, schema map[string]any, propert
 }
 
 func containsString(values []string, target string) bool {
-	for _, v := range values {
-		if v == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, target)
 }
 
 // executeProxyCall executes an HTTP request to the target API for a proxy tool.
@@ -479,7 +475,7 @@ func applyCustomHeaders(req *http.Request, headers string) {
 	if headers == "" {
 		return
 	}
-	for _, pair := range strings.Split(headers, ",") {
+	for pair := range strings.SplitSeq(headers, ",") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue

@@ -115,7 +115,7 @@ func parseMethods(raw string) map[string]bool {
 		return nil
 	}
 	methods := make(map[string]bool)
-	for _, m := range strings.Split(raw, ",") {
+	for m := range strings.SplitSeq(raw, ",") {
 		m = strings.TrimSpace(strings.ToUpper(m))
 		if m != "" {
 			methods[m] = true
