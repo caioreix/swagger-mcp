@@ -30,7 +30,7 @@ func TestLoadDefaultsWithoutDotEnv(t *testing.T) {
 	}()
 
 	t.Setenv("LOG_LEVEL", "")
-	config, err := Load(nil)
+	config, err := load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestLoadReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	}
 
 	t.Setenv("LOG_LEVEL", "")
-	config, err := Load(nil)
+	config, err := load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestLoadReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	}
 
 	t.Setenv("LOG_LEVEL", "warn")
-	config, err = Load(nil)
+	config, err = load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error with preset env: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestLoadParsesSwaggerURLFlag(t *testing.T) {
 		_ = os.Chdir(previousDir)
 	}()
 
-	config, err := Load([]string{"--swagger-url=https://example.com/swagger.json"})
+	config, err := load([]string{"--swagger-url=https://example.com/swagger.json"})
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestLoadAuthConfigFromEnv(t *testing.T) {
 	t.Setenv("OAUTH2_CLIENT_SECRET", "my-secret")
 	t.Setenv("OAUTH2_SCOPES", "read,write")
 
-	config, err := Load(nil)
+	config, err := load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestLoadAuthConfigDefaults(t *testing.T) {
 	t.Setenv("OAUTH2_CLIENT_SECRET", "")
 	t.Setenv("OAUTH2_SCOPES", "")
 
-	config, err := Load(nil)
+	config, err := load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestLoadProxyModeFlags(t *testing.T) {
 		_ = os.Chdir(previousDir)
 	}()
 
-	config, err := Load([]string{
+	config, err := load([]string{
 		"--proxy-mode",
 		"--base-url=https://api.example.com",
 		"--headers=X-Custom=value,X-Tenant=123",

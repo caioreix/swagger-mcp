@@ -3,6 +3,7 @@
 > **Bridge any REST API with AI assistants using [Model Context Protocol](https://modelcontextprotocol.io/).**
 
 [![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8?logo=go)](https://golang.org/)
+[![CI](https://github.com/caioreix/swagger-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/caioreix/swagger-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Go Report](https://goreportcard.com/badge/github.com/caioreix/swagger-mcp)](https://goreportcard.com/report/github.com/caioreix/swagger-mcp)
 
@@ -32,12 +33,15 @@
 ### 1. Install
 
 ```bash
+# From source
 git clone https://github.com/caioreix/swagger-mcp.git
 cd swagger-mcp
-make build
-```
+make build   # binary → build/swagger-mcp
 
-The binary is placed at `build/swagger-mcp`.
+# Or using Docker
+docker build -t swagger-mcp .
+docker run --rm swagger-mcp version
+```
 
 ### 2. Connect to an API
 
@@ -152,29 +156,29 @@ Open `http://localhost:8080/` to browse tools, fill in parameters, and view JSON
 ./build/swagger-mcp --help
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--swagger-url` | — | URL of the Swagger/OpenAPI definition |
-| `--transport` | `stdio` | `stdio`, `sse`, or `streamable-http` |
-| `--port` | `8080` | HTTP port for SSE/StreamableHTTP |
-| `--ui` | `false` | Enable the built-in web UI |
-| `--proxy-mode` | `false` | Dynamic proxy: each endpoint becomes an MCP tool |
-| `--base-url` | — | Override the base URL from the spec |
-| `--headers` | — | Static proxy headers: `Key=Value,Key2=Value2` |
-| `--include-paths` | — | Regex patterns for paths to expose (comma-separated) |
-| `--exclude-paths` | — | Regex patterns for paths to hide (comma-separated) |
-| `--include-methods` | — | HTTP methods to expose: `GET,POST` |
-| `--exclude-methods` | — | HTTP methods to hide: `DELETE,PUT` |
-| `--sse-headers` | — | Headers forwarded from SSE clients to API |
-| `--http-headers` | — | Headers forwarded from StreamableHTTP clients to API |
+| Flag | Default | Env Variable | Description |
+|---|---|---|---|
+| `--swagger-url` | — | `SWAGGER_MCP_SWAGGER_URL` | URL of the Swagger/OpenAPI definition |
+| `--transport` | `stdio` | `SWAGGER_MCP_TRANSPORT` | `stdio`, `sse`, or `streamable-http` |
+| `--port` | `8080` | `SWAGGER_MCP_PORT` | HTTP port for SSE/StreamableHTTP |
+| `--log-level` | `info` | `LOG_LEVEL` | Log verbosity: `debug`, `info`, `warn`, `error` |
+| `--ui` | `false` | `SWAGGER_MCP_UI` | Enable the built-in web UI |
+| `--proxy-mode` | `false` | `SWAGGER_MCP_PROXY_MODE` | Dynamic proxy: each endpoint becomes an MCP tool |
+| `--base-url` | — | `SWAGGER_MCP_BASE_URL` | Override the base URL from the spec |
+| `--headers` | — | `SWAGGER_MCP_HEADERS` | Static proxy headers: `Key=Value,Key2=Value2` |
+| `--include-paths` | — | `SWAGGER_MCP_INCLUDE_PATHS` | Regex patterns for paths to expose (comma-separated) |
+| `--exclude-paths` | — | `SWAGGER_MCP_EXCLUDE_PATHS` | Regex patterns for paths to hide (comma-separated) |
+| `--include-methods` | — | `SWAGGER_MCP_INCLUDE_METHODS` | HTTP methods to expose: `GET,POST` |
+| `--exclude-methods` | — | `SWAGGER_MCP_EXCLUDE_METHODS` | HTTP methods to hide: `DELETE,PUT` |
+| `--sse-headers` | — | `SWAGGER_MCP_SSE_HEADERS` | Headers forwarded from SSE clients to API |
+| `--http-headers` | — | `SWAGGER_MCP_HTTP_HEADERS` | Headers forwarded from StreamableHTTP clients to API |
 
-> Legacy alias `--swaggerUrl` is still accepted but deprecated.
+> **Precedence**: CLI flags > environment variables > defaults. Legacy alias `--swaggerUrl` is still accepted but deprecated.
 
-### Environment Variables
+### Environment Variables (Authentication)
 
 | Variable | Default | Description |
 |---|---|---|
-| `LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `API_KEY` | — | API key value |
 | `API_KEY_HEADER` | `X-API-Key` | Header name for the API key |
 | `API_KEY_IN` | `header` | Where to send the key: `header`, `query`, or `cookie` |
@@ -231,6 +235,20 @@ swagger-mcp inspect endpoint \
   --swagger-url="https://petstore.swagger.io/v2/swagger.json" \
   --path=/pet/{petId} \
   --method=GET
+```
+
+List all security schemes:
+
+```bash
+swagger-mcp inspect security --swagger-url="https://petstore.swagger.io/v2/swagger.json"
+swagger-mcp inspect security --swagger-file=./api.yaml --format=json
+```
+
+List all data models:
+
+```bash
+swagger-mcp inspect models --swagger-url="https://petstore.swagger.io/v2/swagger.json"
+swagger-mcp inspect models --swagger-file=./api.yaml --format=json
 ```
 
 ### `generate` — Generate Go code
@@ -328,9 +346,11 @@ cmd/swagger-mcp/
     ├── inspect.go    inspect parent command
     ├── inspect_endpoints.go
     ├── inspect_endpoint.go
+    ├── inspect_security.go
+    ├── inspect_models.go
     ├── download.go
     ├── version.go
-    └── helpers.go    shared document loading and table printing utilities
+    └── helpers.go    serveOptions struct, env var helpers, document loading, table printing
 internal/
 ├── app/              bootstrap, transport routing
 ├── codegen/          Go code generation (structs, handlers, servers)
@@ -385,19 +405,15 @@ EOF
 
 ## 🤝 Contributing
 
-Contributions are welcome! Here's how to get started:
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for full setup instructions and guidelines.
+
+Quick start:
 
 1. **Fork** the repository and clone your fork
 2. **Create a branch**: `git checkout -b feat/my-improvement`
-3. **Make your changes** — keep commits focused and well-described
+3. **Make your changes** and add tests
 4. **Run the full check**: `make verify`
-5. **Open a Pull Request** with a clear description of what you changed and why
-
-### Guidelines
-
-- Keep `stdout` reserved for JSON-RPC — never write non-JSON-RPC output there
-- Add tests for new functionality (unit tests under the relevant `internal/` package, integration tests under `test/integration/`)
-- Keep external dependencies minimal — all business logic uses only the Go standard library
+5. **Open a Pull Request** with a clear description
 
 ---
 

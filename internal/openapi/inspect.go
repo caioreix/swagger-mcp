@@ -132,6 +132,50 @@ func LookupSchema(document map[string]any, modelName string) (map[string]any, bo
 	return nil, false
 }
 
+// SchemaDefinition represents a top-level model schema from the OpenAPI document.
+type SchemaDefinition struct {
+	Name       string `json:"name"`
+	Type       string `json:"type,omitempty"`
+	Properties int    `json:"properties,omitempty"`
+	Schema     any    `json:"schema,omitempty"`
+}
+
+// ListSchemas returns all top-level model schemas defined in the document.
+// For Swagger 2.0 these are under "definitions"; for OpenAPI 3.x under "components.schemas".
+func ListSchemas(document map[string]any) []SchemaDefinition {
+	collect := func(defs map[string]any) []SchemaDefinition {
+		result := make([]SchemaDefinition, 0, len(defs))
+		for _, name := range sortedKeys(defs) {
+			if def, ok := asMap(defs[name]); ok {
+				sd := SchemaDefinition{
+					Name:   name,
+					Type:   stringValue(def["type"]),
+					Schema: def,
+				}
+				if props, ok := asMap(def["properties"]); ok {
+					sd.Properties = len(props)
+				}
+				result = append(result, sd)
+			}
+		}
+		return result
+	}
+
+	// Swagger 2.0: definitions
+	if definitions, ok := asMap(document["definitions"]); ok {
+		return collect(definitions)
+	}
+
+	// OpenAPI 3.x: components.schemas
+	if components, ok := asMap(document["components"]); ok {
+		if schemas, ok := asMap(components["schemas"]); ok {
+			return collect(schemas)
+		}
+	}
+
+	return []SchemaDefinition{}
+}
+
 func ResolveRef(document map[string]any, ref string) (any, error) {
 	if !strings.HasPrefix(ref, "#/") {
 		return nil, fmt.Errorf("unsupported reference %q", ref)

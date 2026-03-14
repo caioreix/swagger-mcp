@@ -50,7 +50,7 @@ type Config struct {
 	HttpHeaders string // comma-separated header names to forward from StreamableHTTP requests to proxy calls
 }
 
-func Load(args []string) (Config, error) {
+func load(args []string) (Config, error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return Config{}, fmt.Errorf("get working directory: %w", err)
