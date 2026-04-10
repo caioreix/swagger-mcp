@@ -151,6 +151,93 @@ func TestListEndpointsTool(t *testing.T) {
 	}
 }
 
+func TestListEndpointsToolJSONFormat(t *testing.T) {
+	server := newTestServer(t)
+	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 5, "tools/call", map[string]any{
+		"name": "swagger_list_endpoints",
+		"arguments": map[string]any{
+			"swaggerFilePath": testutil.FixturePath(t, "petstore.json"),
+			"response_format": "json",
+		},
+	}))
+	if err != nil {
+		t.Fatalf("HandleJSON returned error: %v", err)
+	}
+
+	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+
+	var parsed map[string]any
+	if jsonErr := json.Unmarshal([]byte(text), &parsed); jsonErr != nil {
+		t.Fatalf("expected JSON response, got parse error: %v\ntext: %s", jsonErr, text)
+	}
+	if _, ok := parsed["total"]; !ok {
+		t.Fatalf("expected JSON response to contain 'total' field, got: %s", text)
+	}
+	if _, ok := parsed["endpoints"]; !ok {
+		t.Fatalf("expected JSON response to contain 'endpoints' field, got: %s", text)
+	}
+}
+
+func TestListEndpointsToolPagination(t *testing.T) {
+	server := newTestServer(t)
+
+	// First page
+	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 5, "tools/call", map[string]any{
+		"name": "swagger_list_endpoints",
+		"arguments": map[string]any{
+			"swaggerFilePath": testutil.FixturePath(t, "petstore.json"),
+			"response_format": "json",
+			"limit":           1,
+			"offset":          0,
+		},
+	}))
+	if err != nil {
+		t.Fatalf("HandleJSON returned error: %v", err)
+	}
+
+	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+
+	var parsed map[string]any
+	if jsonErr := json.Unmarshal([]byte(text), &parsed); jsonErr != nil {
+		t.Fatalf("expected JSON response, got: %v", jsonErr)
+	}
+	count, ok := parsed["count"].(float64)
+	if !ok || int(count) != 1 {
+		t.Fatalf("expected count=1, got %v", parsed["count"])
+	}
+	endpoints, ok := parsed["endpoints"].([]any)
+	if !ok || len(endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %v", parsed["endpoints"])
+	}
+}
+
+func TestListEndpointModelsToolMarkdown(t *testing.T) {
+	server := newTestServer(t)
+	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 8, "tools/call", map[string]any{
+		"name": "swagger_list_endpoint_models",
+		"arguments": map[string]any{
+			"swaggerFilePath": testutil.FixturePath(t, "petstore.json"),
+			"path":            "/pets",
+			"method":          "GET",
+			"response_format": "markdown",
+		},
+	}))
+	if err != nil {
+		t.Fatalf("HandleJSON returned error: %v", err)
+	}
+
+	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
+	content := result["content"].([]any)
+	text := content[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "GET") || !strings.Contains(text, "/pets") {
+		t.Fatalf("expected markdown to contain method and path, got: %s", text)
+	}
+}
+
 func TestUnknownToolReturnsErrorContent(t *testing.T) {
 	server := newTestServer(t)
 	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 6, "tools/call", map[string]any{
