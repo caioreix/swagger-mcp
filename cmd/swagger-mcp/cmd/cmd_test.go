@@ -33,10 +33,10 @@ func repoRoot(tb testing.TB) string {
 }
 
 // run executes the CLI with the given args and returns (stdout, stderr, exitCode).
-func run(t *testing.T, args ...string) (stdout, stderr string, code int) {
+func run(t *testing.T, args ...string) (string, string, int) {
 	t.Helper()
 	var outBuf, errBuf bytes.Buffer
-	code = cmd.Execute(args, strings.NewReader(""), &outBuf, &errBuf)
+	code := cmd.Execute(args, strings.NewReader(""), &outBuf, &errBuf)
 	return outBuf.String(), errBuf.String(), code
 }
 
@@ -154,39 +154,6 @@ func TestInspectEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "GET") {
 		t.Fatalf("expected endpoint details in stdout: %q", stdout)
-	}
-}
-
-// ── generate model ────────────────────────────────────────────────────────────
-
-func TestGenerateModelCode(t *testing.T) {
-	fixture := filepath.Join(repoRoot(t), "testdata", "petstore.json")
-	stdout, stderr, code := run(t, "generate", "model",
-		"--swagger-file="+fixture,
-		"--model=Pet",
-	)
-	if code != 0 {
-		t.Fatalf("generate model exited %d; stderr: %s", code, stderr)
-	}
-	if !strings.Contains(stdout, "Pet") {
-		t.Fatalf("expected Go type in stdout: %q", stdout)
-	}
-}
-
-// ── generate tool ─────────────────────────────────────────────────────────────
-
-func TestGenerateToolCode(t *testing.T) {
-	fixture := filepath.Join(repoRoot(t), "testdata", "petstore.json")
-	stdout, stderr, code := run(t, "generate", "tool",
-		"--swagger-file="+fixture,
-		"--path=/pets",
-		"--method=GET",
-	)
-	if code != 0 {
-		t.Fatalf("generate tool exited %d; stderr: %s", code, stderr)
-	}
-	if !strings.Contains(stdout, "func") {
-		t.Fatalf("expected Go function in stdout: %q", stdout)
 	}
 }
 

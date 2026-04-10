@@ -1,4 +1,4 @@
-package openapi
+package openapi_test
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/caioreix/swagger-mcp/internal/openapi"
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
 
@@ -19,14 +20,14 @@ func silentLogger() *slog.Logger {
 }
 
 func cachePathsForURL(workingDir, url string) (string, string) {
-	cacheKey := hashURL(url)
+	cacheKey := openapi.HashURL(url)
 	cacheDir := filepath.Join(workingDir, "swagger-cache")
-	return filepath.Join(cacheDir, cacheKey+".json"), filepath.Join(cacheDir, cacheKey+cacheMetadataSuffix)
+	return filepath.Join(cacheDir, cacheKey+".json"), filepath.Join(cacheDir, cacheKey+openapi.CacheMetadataSuffix)
 }
 
-func readTestCacheMetadata(t *testing.T, path string) cacheMetadata {
+func readTestCacheMetadata(t *testing.T, path string) openapi.CacheMetadata {
 	t.Helper()
-	metadata, err := readCacheMetadata(path)
+	metadata, err := openapi.ReadCacheMetadata(path)
 	if err != nil {
 		t.Fatalf("read cache metadata: %v", err)
 	}
@@ -34,7 +35,7 @@ func readTestCacheMetadata(t *testing.T, path string) cacheMetadata {
 }
 
 func TestReadDefinitionFromFileJSON(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestReadDefinitionFromFileJSON(t *testing.T) {
 }
 
 func TestReadDefinitionFromFileYAML(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "date-time-test.yml"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "date-time-test.yml"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
@@ -52,13 +53,13 @@ func TestReadDefinitionFromFileYAML(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected paths object, got %#v", document["paths"])
 	}
-	if _, ok := paths["/events"]; !ok {
+	if _, eventsOk := paths["/events"]; !eventsOk {
 		t.Fatalf("expected /events path in YAML fixture")
 	}
 }
 
 func TestReadDefinitionFromFileOpenAPI31JSON(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestReadDefinitionFromFileOpenAPI31JSON(t *testing.T) {
 }
 
 func TestReadDefinitionFromFileOpenAPI31YAML(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.yml"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.yml"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestReadDefinitionRejectsUnsupportedDocument(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"info":{"title":"invalid"}}`), 0o644); err != nil {
 		t.Fatalf("write invalid fixture: %v", err)
 	}
-	_, err := ReadDefinitionFromFile(path)
+	_, err := openapi.ReadDefinitionFromFile(path)
 	if err == nil {
 		t.Fatal("expected invalid swagger document to fail")
 	}
@@ -100,14 +101,18 @@ func TestSourceResolverUsesProjectMapping(t *testing.T) {
 	}
 
 	swaggerPath := filepath.Join(temporaryDir, "petstore.json")
-	if err := os.WriteFile(swaggerPath, fixtureBytes, 0o644); err != nil {
-		t.Fatalf("write swagger fixture: %v", err)
+	if writeErr := os.WriteFile(swaggerPath, fixtureBytes, 0o644); writeErr != nil {
+		t.Fatalf("write swagger fixture: %v", writeErr)
 	}
-	if err := os.WriteFile(filepath.Join(temporaryDir, ".swagger-mcp"), []byte("SWAGGER_FILEPATH="+swaggerPath+"\n"), 0o644); err != nil {
-		t.Fatalf("write .swagger-mcp: %v", err)
+	if writeErr := os.WriteFile(
+		filepath.Join(temporaryDir, ".swagger-mcp"),
+		[]byte("SWAGGER_FILEPATH="+swaggerPath+"\n"),
+		0o644,
+	); writeErr != nil {
+		t.Fatalf("write .swagger-mcp: %v", writeErr)
 	}
 
-	resolver := NewSourceResolver(temporaryDir, "", silentLogger())
+	resolver := openapi.NewSourceResolver(temporaryDir, "", silentLogger())
 	document, err := resolver.Load("")
 	if err != nil {
 		t.Fatalf("resolver.Load returned error: %v", err)
@@ -123,14 +128,14 @@ func TestSourceResolverPrefersCLIURLOverInputPath(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		requests++
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(payload)
 	}))
 	defer server.Close()
 
-	resolver := NewSourceResolver(t.TempDir(), server.URL, silentLogger())
+	resolver := openapi.NewSourceResolver(t.TempDir(), server.URL, silentLogger())
 	document, err := resolver.Load("/definitely/missing.json")
 	if err != nil {
 		t.Fatalf("resolver.Load returned error: %v", err)
@@ -146,11 +151,15 @@ func TestSourceResolverPrefersCLIURLOverInputPath(t *testing.T) {
 func TestResolvePathErrorsWhenMappedFileMissing(t *testing.T) {
 	temporaryDir := t.TempDir()
 	mappedPath := filepath.Join(temporaryDir, "missing.json")
-	if err := os.WriteFile(filepath.Join(temporaryDir, ".swagger-mcp"), []byte("SWAGGER_FILEPATH="+mappedPath+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(temporaryDir, ".swagger-mcp"),
+		[]byte("SWAGGER_FILEPATH="+mappedPath+"\n"),
+		0o644,
+	); err != nil {
 		t.Fatalf("write .swagger-mcp: %v", err)
 	}
 
-	resolver := NewSourceResolver(temporaryDir, "", silentLogger())
+	resolver := openapi.NewSourceResolver(temporaryDir, "", silentLogger())
 	_, err := resolver.ResolvePath("")
 	if err == nil {
 		t.Fatal("expected missing mapped file to fail")
@@ -161,7 +170,7 @@ func TestResolvePathErrorsWhenMappedFileMissing(t *testing.T) {
 }
 
 func TestDownloadDefinition(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(map[string]any{
 			"swagger": "2.0",
@@ -171,7 +180,7 @@ func TestDownloadDefinition(t *testing.T) {
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, "", silentLogger())
+	resolver := openapi.NewSourceResolver(temporaryDir, "", silentLogger())
 	savedDefinition, err := resolver.DownloadDefinition(server.URL, temporaryDir)
 	if err != nil {
 		t.Fatalf("DownloadDefinition returned error: %v", err)
@@ -179,18 +188,18 @@ func TestDownloadDefinition(t *testing.T) {
 	if filepath.Ext(savedDefinition.FilePath) != ".json" {
 		t.Fatalf("expected .json saved file, got %s", savedDefinition.FilePath)
 	}
-	if _, err := os.Stat(savedDefinition.FilePath); err != nil {
-		t.Fatalf("expected saved file to exist: %v", err)
+	if _, statErr := os.Stat(savedDefinition.FilePath); statErr != nil {
+		t.Fatalf("expected saved file to exist: %v", statErr)
 	}
 }
 
 func TestDownloadDefinitionReturnsHTTPError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusBadGateway)
 	}))
 	defer server.Close()
 
-	resolver := NewSourceResolver(t.TempDir(), "", silentLogger())
+	resolver := openapi.NewSourceResolver(t.TempDir(), "", silentLogger())
 	_, err := resolver.DownloadDefinition(server.URL, t.TempDir())
 	if err == nil {
 		t.Fatal("expected download failure")
@@ -226,7 +235,7 @@ func TestCachedOrDownloadRevalidatesWithETag(t *testing.T) {
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, server.URL, silentLogger())
+	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
 	first, err := resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
@@ -280,15 +289,15 @@ func TestCachedOrDownloadRedownloadsWhenMetadataMissing(t *testing.T) {
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, server.URL, silentLogger())
+	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
 	first, err := resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
 
 	_, metadataPath := cachePathsForURL(temporaryDir, server.URL)
-	if err := os.Remove(metadataPath); err != nil {
-		t.Fatalf("remove metadata: %v", err)
+	if removeErr := os.Remove(metadataPath); removeErr != nil {
+		t.Fatalf("remove metadata: %v", removeErr)
 	}
 
 	second, err := resolver.ResolvePath("")
@@ -313,7 +322,7 @@ func TestCachedOrDownloadRedownloadsWhenCachedFileHashMismatches(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		requests++
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(payload)
@@ -321,13 +330,13 @@ func TestCachedOrDownloadRedownloadsWhenCachedFileHashMismatches(t *testing.T) {
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, server.URL, silentLogger())
+	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
 	resolvedPath, err := resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
-	if err := os.WriteFile(resolvedPath, []byte("corrupted cache"), 0o644); err != nil {
-		t.Fatalf("corrupt cache file: %v", err)
+	if writeErr := os.WriteFile(resolvedPath, []byte("corrupted cache"), 0o644); writeErr != nil {
+		t.Fatalf("corrupt cache file: %v", writeErr)
 	}
 
 	resolvedPath, err = resolver.ResolvePath("")
@@ -337,7 +346,7 @@ func TestCachedOrDownloadRedownloadsWhenCachedFileHashMismatches(t *testing.T) {
 	if requests != 2 {
 		t.Fatalf("expected redownload after hash mismatch, got %d requests", requests)
 	}
-	document, err := ReadDefinitionFromFile(resolvedPath)
+	document, err := openapi.ReadDefinitionFromFile(resolvedPath)
 	if err != nil {
 		t.Fatalf("expected refreshed cache file to be readable: %v", err)
 	}
@@ -375,8 +384,8 @@ func TestCachedOrDownloadUpdatesCacheWhenRemoteContentChanges(t *testing.T) {
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	resolvedPath, err := resolver.ResolvePath("")
+	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
+	_, err = resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
@@ -384,7 +393,7 @@ func TestCachedOrDownloadUpdatesCacheWhenRemoteContentChanges(t *testing.T) {
 	_, metadataPath := cachePathsForURL(temporaryDir, server.URL)
 	initialMetadata := readTestCacheMetadata(t, metadataPath)
 
-	resolvedPath, err = resolver.ResolvePath("")
+	resolvedPath, err := resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -392,7 +401,7 @@ func TestCachedOrDownloadUpdatesCacheWhenRemoteContentChanges(t *testing.T) {
 		t.Fatalf("expected remote update to trigger a second request, got %d", requests)
 	}
 
-	document, err := ReadDefinitionFromFile(resolvedPath)
+	document, err := openapi.ReadDefinitionFromFile(resolvedPath)
 	if err != nil {
 		t.Fatalf("read refreshed cache file: %v", err)
 	}
@@ -438,15 +447,15 @@ func TestCachedOrDownloadFallsBackToGETWhenValidatorsAreUnavailable(t *testing.T
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	resolvedPath, err := resolver.ResolvePath("")
+	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
+	_, err = resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
 	_, metadataPath := cachePathsForURL(temporaryDir, server.URL)
 	initialMetadata := readTestCacheMetadata(t, metadataPath)
 
-	resolvedPath, err = resolver.ResolvePath("")
+	resolvedPath, err := resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -454,7 +463,7 @@ func TestCachedOrDownloadFallsBackToGETWhenValidatorsAreUnavailable(t *testing.T
 		t.Fatalf("expected fallback validation to fetch twice, got %d requests", requests)
 	}
 
-	document, err := ReadDefinitionFromFile(resolvedPath)
+	document, err := openapi.ReadDefinitionFromFile(resolvedPath)
 	if err != nil {
 		t.Fatalf("read refreshed fallback cache file: %v", err)
 	}
@@ -471,7 +480,10 @@ func TestCachedOrDownloadFallsBackToGETWhenValidatorsAreUnavailable(t *testing.T
 		t.Fatalf("expected no ETag metadata when server does not send validators, got %q", updatedMetadata.ETag)
 	}
 	if updatedMetadata.LastModified != "" {
-		t.Fatalf("expected no Last-Modified metadata when server does not send validators, got %q", updatedMetadata.LastModified)
+		t.Fatalf(
+			"expected no Last-Modified metadata when server does not send validators, got %q",
+			updatedMetadata.LastModified,
+		)
 	}
 	if updatedMetadata.ContentHash == initialMetadata.ContentHash {
 		t.Fatal("expected content hash to change after fallback refresh")
@@ -504,16 +516,16 @@ func TestSourceResolverPreloadUsesLastModifiedForLaterLoads(t *testing.T) {
 	defer server.Close()
 
 	temporaryDir := t.TempDir()
-	resolver := NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	if err := resolver.Preload(); err != nil {
-		t.Fatalf("Preload returned error: %v", err)
+	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
+	if preloadErr := resolver.Preload(); preloadErr != nil {
+		t.Fatalf("Preload returned error: %v", preloadErr)
 	}
 	resolvedPath, err := resolver.ResolvePath("")
 	if err != nil {
 		t.Fatalf("ResolvePath returned error after preload: %v", err)
 	}
-	if _, err := os.Stat(resolvedPath); err != nil {
-		t.Fatalf("expected preloaded swagger file to exist: %v", err)
+	if _, statErr := os.Stat(resolvedPath); statErr != nil {
+		t.Fatalf("expected preloaded swagger file to exist: %v", statErr)
 	}
 	if requests != 2 {
 		t.Fatalf("expected preload plus conditional revalidation, got %d requests", requests)

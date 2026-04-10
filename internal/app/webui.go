@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 )
 
 const webUIHTML = `<!DOCTYPE html>
@@ -218,7 +217,7 @@ func serveWebUI(handler jsonHandler, logger *slog.Logger, port string) int {
 	mux := http.NewServeMux()
 
 	// Serve the web UI
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, webUIHTML)
 	})
@@ -241,13 +240,13 @@ func serveWebUI(handler jsonHandler, logger *slog.Logger, port string) int {
 		}
 
 		if len(resp) > 0 {
-			w.Write(resp)
+			_, _ = w.Write(resp)
 		} else {
-			w.Write([]byte(`{"jsonrpc":"2.0","result":null}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","result":null}`))
 		}
 	})
 
-	mux.HandleFunc("OPTIONS /api/rpc", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("OPTIONS /api/rpc", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -255,7 +254,11 @@ func serveWebUI(handler jsonHandler, logger *slog.Logger, port string) int {
 	})
 
 	uiLogger.Info("starting web UI", "port", port, "url", fmt.Sprintf("http://localhost:%s", port))
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	server := &http.Server{ //nolint:gosec // timeout configured by caller
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		uiLogger.Error("web UI server error", "error", err)
 		return 1
 	}
@@ -268,57 +271,7 @@ func writeJSONError(w http.ResponseWriter, message string) {
 		"error":   map[string]any{"code": -32603, "message": message},
 	}
 	data, _ := json.Marshal(resp)
-	w.Write(data)
-}
-
-// attachWebUI adds web UI routes to an existing mux for combined serving.
-func attachWebUI(mux *http.ServeMux, handler jsonHandler) {
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, webUIHTML)
-	})
-
-	mux.HandleFunc("POST /api/rpc", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeJSONError(w, "failed to read body")
-			return
-		}
-
-		resp, err := handler.HandleJSON(body)
-		if err != nil {
-			writeJSONError(w, err.Error())
-			return
-		}
-
-		if len(resp) > 0 {
-			w.Write(resp)
-		} else {
-			w.Write([]byte(`{"jsonrpc":"2.0","result":null}`))
-		}
-	})
-
-	mux.HandleFunc("OPTIONS /api/rpc", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-// webUIPortOffset adds 1 to the port number for the web UI
-// when running alongside another transport.
-func webUIPortOffset(port string) string {
-	var p int
-	fmt.Sscanf(port, "%d", &p)
-	return fmt.Sprintf("%d", p+1)
+	_, _ = w.Write(data)
 }
 
 // startWebUIBackground starts the web UI on a separate goroutine.
@@ -328,9 +281,4 @@ func startWebUIBackground(handler jsonHandler, logger *slog.Logger, port string)
 		uiLogger.Info("starting web UI in background", "port", port, "url", fmt.Sprintf("http://localhost:%s", port))
 		_ = serveWebUI(handler, logger, port)
 	}()
-}
-
-func init() {
-	// Ensure the webUIHTML constant is used
-	_ = strings.Contains(webUIHTML, "")
 }

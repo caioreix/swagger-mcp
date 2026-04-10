@@ -1,7 +1,7 @@
 package openapi
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,5 +33,5 @@ func readProjectMapping(workingDir string) (string, error) {
 			return filepath.Join(workingDir, value), nil
 		}
 	}
-	return "", fmt.Errorf("SWAGGER_FILEPATH not found in .swagger-mcp")
+	return "", errors.New("SWAGGER_FILEPATH not found in .swagger-mcp")
 }

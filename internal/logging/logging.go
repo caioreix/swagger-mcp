@@ -10,7 +10,8 @@ func Setup(levelName string) *slog.Logger {
 	level := new(slog.LevelVar)
 	level.Set(parseLevel(levelName))
 
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})).With("service", "swagger-mcp")
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})).
+		With("service", "swagger-mcp")
 	slog.SetDefault(logger)
 	return logger
 }

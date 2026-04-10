@@ -10,6 +10,8 @@ import (
 
 const defaultMultiAPIConfigFile = ".swagger-mcp.yaml"
 
+const templateVarPrefixLen = 2 // length of "${" prefix
+
 // DefaultMultiAPIConfigFile is the file name auto-discovered in the working directory.
 const DefaultMultiAPIConfigFile = defaultMultiAPIConfigFile
 
@@ -49,13 +51,13 @@ func LoadMultiAPIConfig(path string) ([]APIConfig, error) {
 
 	configs := make([]APIConfig, 0, len(apisList))
 	for i, item := range apisList {
-		m, ok := item.(map[string]any)
-		if !ok {
+		m, itemOk := item.(map[string]any)
+		if !itemOk {
 			return nil, fmt.Errorf("multi-api config %q: apis[%d] must be a mapping", path, i)
 		}
-		cfg, err := parseAPIConfig(m, path, i)
-		if err != nil {
-			return nil, err
+		cfg, cfgErr := parseAPIConfig(m, path, i)
+		if cfgErr != nil {
+			return nil, cfgErr
 		}
 		configs = append(configs, cfg)
 	}
@@ -82,8 +84,8 @@ func parseAPIConfig(m map[string]any, path string, index int) (APIConfig, error)
 	}
 
 	if authRaw, ok := m["auth"]; ok {
-		authMap, ok := authRaw.(map[string]any)
-		if !ok {
+		authMap, authMapOk := authRaw.(map[string]any)
+		if !authMapOk {
 			return APIConfig{}, fmt.Errorf("multi-api config %q: apis[%d].auth must be a mapping", path, index)
 		}
 		cfg.Auth = parseAuthConfig(authMap)
@@ -95,7 +97,7 @@ func parseAPIConfig(m map[string]any, path string, index int) (APIConfig, error)
 func parseAuthConfig(m map[string]any) AuthConfig {
 	apiKeyHeader := expandEnvVars(stringField(m, "api_key_header"))
 	if apiKeyHeader == "" {
-		apiKeyHeader = "X-API-Key"
+		apiKeyHeader = "X-API-Key" //nolint:gosec // G101: header name, not a credential
 	}
 	apiKeyIn := expandEnvVars(stringField(m, "api_key_in"))
 	if apiKeyIn == "" {
@@ -141,7 +143,7 @@ func expandEnvVars(s string) string {
 			break
 		}
 		b.WriteString(s[i : i+start])
-		i += start + 2 // skip "${"
+		i += start + templateVarPrefixLen // skip "${"
 		end := strings.Index(s[i:], "}")
 		if end == -1 {
 			// unterminated placeholder — write as-is

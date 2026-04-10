@@ -1,13 +1,15 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	configpkg "github.com/caioreix/swagger-mcp/internal/config"
 )
 
 func TestNormalizeArgs(t *testing.T) {
-	args := normalizeArgs([]string{"--swaggerUrl=https://example.com/swagger.json", "--other"})
+	args := configpkg.NormalizeArgs([]string{"--swaggerUrl=https://example.com/swagger.json", "--other"})
 	if len(args) != 2 {
 		t.Fatalf("expected 2 args, got %d", len(args))
 	}
@@ -18,19 +20,10 @@ func TestNormalizeArgs(t *testing.T) {
 
 func TestLoadDefaultsWithoutDotEnv(t *testing.T) {
 	temporaryDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(temporaryDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(previousDir)
-	}()
+	t.Chdir(temporaryDir)
 
 	t.Setenv("LOG_LEVEL", "")
-	config, err := load(nil)
+	config, err := configpkg.Load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -44,16 +37,7 @@ func TestLoadDefaultsWithoutDotEnv(t *testing.T) {
 
 func TestLoadReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	temporaryDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(temporaryDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(previousDir)
-	}()
+	t.Chdir(temporaryDir)
 
 	dotEnvPath := filepath.Join(temporaryDir, ".env")
 	if err := os.WriteFile(dotEnvPath, []byte("LOG_LEVEL=debug\n"), 0o644); err != nil {
@@ -61,7 +45,7 @@ func TestLoadReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	}
 
 	t.Setenv("LOG_LEVEL", "")
-	config, err := load(nil)
+	config, err := configpkg.Load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -70,7 +54,7 @@ func TestLoadReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	}
 
 	t.Setenv("LOG_LEVEL", "warn")
-	config, err = load(nil)
+	config, err = configpkg.Load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error with preset env: %v", err)
 	}
@@ -81,18 +65,9 @@ func TestLoadReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 
 func TestLoadParsesSwaggerURLFlag(t *testing.T) {
 	temporaryDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(temporaryDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(previousDir)
-	}()
+	t.Chdir(temporaryDir)
 
-	config, err := load([]string{"--swagger-url=https://example.com/swagger.json"})
+	config, err := configpkg.Load([]string{"--swagger-url=https://example.com/swagger.json"})
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -103,16 +78,7 @@ func TestLoadParsesSwaggerURLFlag(t *testing.T) {
 
 func TestLoadAuthConfigFromEnv(t *testing.T) {
 	temporaryDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(temporaryDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(previousDir)
-	}()
+	t.Chdir(temporaryDir)
 
 	t.Setenv("API_KEY", "test-key-123")
 	t.Setenv("API_KEY_HEADER", "Authorization")
@@ -125,7 +91,7 @@ func TestLoadAuthConfigFromEnv(t *testing.T) {
 	t.Setenv("OAUTH2_CLIENT_SECRET", "my-secret")
 	t.Setenv("OAUTH2_SCOPES", "read,write")
 
-	config, err := load(nil)
+	config, err := configpkg.Load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -154,16 +120,7 @@ func TestLoadAuthConfigFromEnv(t *testing.T) {
 
 func TestLoadAuthConfigDefaults(t *testing.T) {
 	temporaryDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(temporaryDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(previousDir)
-	}()
+	t.Chdir(temporaryDir)
 
 	t.Setenv("API_KEY", "")
 	t.Setenv("API_KEY_HEADER", "")
@@ -176,7 +133,7 @@ func TestLoadAuthConfigDefaults(t *testing.T) {
 	t.Setenv("OAUTH2_CLIENT_SECRET", "")
 	t.Setenv("OAUTH2_SCOPES", "")
 
-	config, err := load(nil)
+	config, err := configpkg.Load(nil)
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -190,18 +147,9 @@ func TestLoadAuthConfigDefaults(t *testing.T) {
 
 func TestLoadProxyModeFlags(t *testing.T) {
 	temporaryDir := t.TempDir()
-	previousDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(temporaryDir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(previousDir)
-	}()
+	t.Chdir(temporaryDir)
 
-	config, err := load([]string{
+	config, err := configpkg.Load([]string{
 		"--proxy-mode",
 		"--base-url=https://api.example.com",
 		"--headers=X-Custom=value,X-Tenant=123",

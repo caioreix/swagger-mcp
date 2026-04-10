@@ -25,8 +25,8 @@ func TestQuickstartHandshake(t *testing.T) {
 	}
 	result := responses[1]["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 7 {
-		t.Fatalf("expected 7 tools, got %d", len(tools))
+	if len(tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(tools))
 	}
 	if stderr != "" {
 		t.Logf("binary emitted stderr during quickstart smoke test:\n%s", stderr)

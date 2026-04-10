@@ -14,7 +14,7 @@ func newVersionCmd(out io.Writer) *cobra.Command {
 		Use:   "version",
 		Short: "Print the swagger-mcp version and exit",
 		Long:  "Print the current version of the swagger-mcp server and exit.",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Fprintf(out, "swagger-mcp %s\n", config.Version)
 		},
 	}

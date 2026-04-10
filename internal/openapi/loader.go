@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/caioreix/swagger-mcp/internal/logging"
 )
+
+const httpClientTimeout = 30 * time.Second
 
 type SavedDefinition struct {
 	FilePath string `json:"filePath"`
@@ -33,7 +36,7 @@ func NewSourceResolver(workingDir, swaggerURL string, loggers ...*slog.Logger) S
 	return SourceResolver{
 		WorkingDir: workingDir,
 		SwaggerURL: strings.TrimSpace(swaggerURL),
-		Client:     &http.Client{Timeout: 30 * time.Second},
+		Client:     &http.Client{Timeout: httpClientTimeout},
 		logger:     logging.WithComponent(logger, "openapi.resolver"),
 	}
 }
@@ -93,5 +96,7 @@ func (r SourceResolver) ResolvePath(swaggerFilePath string) (string, error) {
 		return "", fmt.Errorf("swagger file from .swagger-mcp not found at %s", mappedPath)
 	}
 
-	return "", fmt.Errorf("swagger URL or file path is required. Provide --swagger-url=<url>, swaggerFilePath parameter, or .swagger-mcp mapping")
+	return "", errors.New(
+		"swagger URL or file path is required. Provide --swagger-url=<url>, swaggerFilePath parameter, or .swagger-mcp mapping",
+	)
 }

@@ -1,4 +1,4 @@
-package app
+package app_test
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	app "github.com/caioreix/swagger-mcp/internal/app"
 )
 
 // mockHandler is a test double for the jsonHandler interface.
@@ -30,7 +32,7 @@ func (m *mockHandler) HandleJSON(line []byte) ([]byte, error) {
 	return nil, nil
 }
 
-func (m *mockHandler) HandleJSONWithHeaders(line []byte, headers map[string]string) ([]byte, error) {
+func (m *mockHandler) HandleJSONWithHeaders(line []byte, _ map[string]string) ([]byte, error) {
 	return m.HandleJSON(line)
 }
 
@@ -43,7 +45,7 @@ func TestServeStdioProcessesRequestAndWritesResponse(t *testing.T) {
 	stdin := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"test"}` + "\n")
 	var stdout bytes.Buffer
 
-	code := serveStdio(handler, slog.Default(), stdin, &stdout)
+	code := app.ServeStdio(handler, slog.Default(), stdin, &stdout)
 
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
@@ -61,7 +63,7 @@ func TestServeStdioSkipsBlankLines(t *testing.T) {
 	stdin := strings.NewReader("\n\n\n")
 	var stdout bytes.Buffer
 
-	code := serveStdio(handler, slog.Default(), stdin, &stdout)
+	code := app.ServeStdio(handler, slog.Default(), stdin, &stdout)
 
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
@@ -76,7 +78,7 @@ func TestServeStdioNoResponseForNilReturn(t *testing.T) {
 	stdin := strings.NewReader(`{"method":"notify"}` + "\n")
 	var stdout bytes.Buffer
 
-	code := serveStdio(handler, slog.Default(), stdin, &stdout)
+	code := app.ServeStdio(handler, slog.Default(), stdin, &stdout)
 
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
@@ -99,7 +101,7 @@ func TestServeStdioMultipleMessages(t *testing.T) {
 	)
 	var stdout bytes.Buffer
 
-	code := serveStdio(handler, slog.Default(), stdin, &stdout)
+	code := app.ServeStdio(handler, slog.Default(), stdin, &stdout)
 
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d", code)
@@ -116,20 +118,20 @@ func TestServeStdioMultipleMessages(t *testing.T) {
 // ── parseHeaderNames ─────────────────────────────────────────────────────────
 
 func TestParseHeaderNamesEmpty(t *testing.T) {
-	if names := parseHeaderNames(""); names != nil {
+	if names := app.ParseHeaderNames(""); names != nil {
 		t.Fatalf("expected nil for empty string, got %v", names)
 	}
 }
 
 func TestParseHeaderNamesSingle(t *testing.T) {
-	names := parseHeaderNames("Authorization")
+	names := app.ParseHeaderNames("Authorization")
 	if len(names) != 1 || names[0] != "Authorization" {
 		t.Fatalf("unexpected result: %v", names)
 	}
 }
 
 func TestParseHeaderNamesMultipleWithSpaces(t *testing.T) {
-	names := parseHeaderNames("Authorization, X-Tenant-ID , X-Source")
+	names := app.ParseHeaderNames("Authorization, X-Tenant-ID , X-Source")
 	if len(names) != 3 {
 		t.Fatalf("expected 3 names, got %v", names)
 	}
@@ -139,7 +141,7 @@ func TestParseHeaderNamesMultipleWithSpaces(t *testing.T) {
 }
 
 func TestParseHeaderNamesSkipsEmptySegments(t *testing.T) {
-	names := parseHeaderNames("A,,B,")
+	names := app.ParseHeaderNames("A,,B,")
 	if len(names) != 2 {
 		t.Fatalf("expected 2 non-empty names, got %v", names)
 	}
@@ -151,7 +153,7 @@ func TestExtractHeadersNilWhenNoNames(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer tok")
 
-	if result := extractHeaders(r, nil); result != nil {
+	if result := app.ExtractHeaders(r, nil); result != nil {
 		t.Fatalf("expected nil result when no names provided, got %v", result)
 	}
 }
@@ -159,9 +161,9 @@ func TestExtractHeadersNilWhenNoNames(t *testing.T) {
 func TestExtractHeadersPresent(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer tok")
-	r.Header.Set("X-Tenant-ID", "acme")
+	r.Header.Set("X-Tenant-Id", "acme")
 
-	result := extractHeaders(r, []string{"Authorization", "X-Tenant-ID"})
+	result := app.ExtractHeaders(r, []string{"Authorization", "X-Tenant-ID"})
 	if len(result) != 2 {
 		t.Fatalf("expected 2 headers, got %v", result)
 	}
@@ -173,7 +175,7 @@ func TestExtractHeadersPresent(t *testing.T) {
 func TestExtractHeadersMissingAreOmitted(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	result := extractHeaders(r, []string{"Authorization", "X-Missing"})
+	result := app.ExtractHeaders(r, []string{"Authorization", "X-Missing"})
 	if result != nil {
 		t.Fatalf("expected nil when no matching headers present, got %v", result)
 	}
@@ -183,7 +185,7 @@ func TestExtractHeadersPartialMatch(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "token")
 
-	result := extractHeaders(r, []string{"Authorization", "X-Missing"})
+	result := app.ExtractHeaders(r, []string{"Authorization", "X-Missing"})
 	if len(result) != 1 {
 		t.Fatalf("expected 1 header (only present ones), got %v", result)
 	}
@@ -197,7 +199,7 @@ func TestExtractHeadersPartialMatch(t *testing.T) {
 func TestSSEMessageHandlerMissingClientID(t *testing.T) {
 	handler := &mockHandler{}
 	logger := slog.Default()
-	headerNames := parseHeaderNames("")
+	headerNames := app.ParseHeaderNames("")
 
 	var clients = make(map[string]chan []byte)
 	mux := buildSSEMux(handler, logger, headerNames, clients)
@@ -216,7 +218,7 @@ func TestSSEMessageHandlerUnknownClientIDIsIgnored(t *testing.T) {
 		responses: [][]byte{[]byte(`{"result":"ok"}`)},
 	}
 	logger := slog.Default()
-	headerNames := parseHeaderNames("")
+	headerNames := app.ParseHeaderNames("")
 	clients := make(map[string]chan []byte)
 	mux := buildSSEMux(handler, logger, headerNames, clients)
 
@@ -236,7 +238,7 @@ func TestStreamableHTTPPost(t *testing.T) {
 		responses: [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`)},
 	}
 	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, parseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"method":"test"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -257,7 +259,7 @@ func TestStreamableHTTPPost(t *testing.T) {
 func TestStreamableHTTPDeleteSession(t *testing.T) {
 	handler := &mockHandler{}
 	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, parseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
 	req.Header.Set("Mcp-Session-Id", "session-1")
@@ -272,7 +274,7 @@ func TestStreamableHTTPDeleteSession(t *testing.T) {
 func TestStreamableHTTPOptions(t *testing.T) {
 	handler := &mockHandler{}
 	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, parseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
 	w := httptest.NewRecorder()
@@ -286,7 +288,7 @@ func TestStreamableHTTPOptions(t *testing.T) {
 func TestStreamableHTTPMethodNotAllowed(t *testing.T) {
 	handler := &mockHandler{}
 	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, parseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	w := httptest.NewRecorder()
@@ -301,7 +303,12 @@ func TestStreamableHTTPMethodNotAllowed(t *testing.T) {
 // buildSSEMux and buildStreamableHTTPMux create the HTTP mux for testing
 // without starting a real TCP listener.
 
-func buildSSEMux(handler jsonHandler, logger *slog.Logger, headerNames []string, clients map[string]chan []byte) *http.ServeMux {
+func buildSSEMux(
+	handler app.JSONHandler,
+	logger *slog.Logger,
+	headerNames []string,
+	clients map[string]chan []byte,
+) *http.ServeMux {
 	var mu = new(syncMu)
 	mux := http.NewServeMux()
 
@@ -320,7 +327,7 @@ func buildSSEMux(handler jsonHandler, logger *slog.Logger, headerNames []string,
 			return
 		}
 
-		resp, err := handler.HandleJSONWithHeaders(body, extractHeaders(r, headerNames))
+		resp, err := handler.HandleJSONWithHeaders(body, app.ExtractHeaders(r, headerNames))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -342,7 +349,7 @@ func buildSSEMux(handler jsonHandler, logger *slog.Logger, headerNames []string,
 	return mux
 }
 
-func buildStreamableHTTPMux(handler jsonHandler, logger *slog.Logger, headerNames []string) *http.ServeMux {
+func buildStreamableHTTPMux(handler app.JSONHandler, logger *slog.Logger, headerNames []string) *http.ServeMux {
 	var mu syncMu
 	sessions := make(map[string]bool)
 	var counter int64
@@ -381,7 +388,7 @@ func buildStreamableHTTPMux(handler jsonHandler, logger *slog.Logger, headerName
 				sessions[sessionID] = true
 				mu.Unlock()
 			}
-			resp, err := handler.HandleJSONWithHeaders(body, extractHeaders(r, headerNames))
+			resp, err := handler.HandleJSONWithHeaders(body, app.ExtractHeaders(r, headerNames))
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -401,7 +408,7 @@ func buildStreamableHTTPMux(handler jsonHandler, logger *slog.Logger, headerName
 }
 
 // syncMu is a thin wrapper so test helpers don't need to import sync.
-type syncMu struct{ mu [0]byte }
+type syncMu struct{}
 
 func (s *syncMu) Lock()   {}
 func (s *syncMu) Unlock() {}

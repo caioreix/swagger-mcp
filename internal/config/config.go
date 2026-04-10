@@ -46,19 +46,19 @@ type APIConfig struct {
 }
 
 type Config struct {
-	SwaggerURL string
-	LogLevel   string
-	WorkingDir string
-	Auth       AuthConfig
-	Filter     FilterConfig
-	Transport  string // "stdio", "sse", "streamable-http"
-	Port       string // HTTP port (default: "8080")
-	EnableUI   bool   // enable web UI
+	SwaggerURL  string
+	LogLevel    string
+	WorkingDir  string
+	Auth        AuthConfig
+	Filter      FilterConfig
+	Transport   string // "stdio", "sse", "streamable-http"
+	Port        string // HTTP port (default: "8080")
+	EnableUI    bool   // enable web UI
 	ProxyMode   bool   // enable dynamic proxy mode
 	BaseURL     string // override base URL from swagger spec
 	Headers     string // custom headers (name1=value1,name2=value2)
 	SseHeaders  string // comma-separated header names to forward from SSE requests to proxy calls
-	HttpHeaders string // comma-separated header names to forward from StreamableHTTP requests to proxy calls
+	HTTPHeaders string // comma-separated header names to forward from StreamableHTTP requests to proxy calls
 	// APIs holds multiple named API profiles loaded from the swagger-mcp.yaml config file.
 	// When populated, each API generates its own set of proxy tools.
 	APIs []APIConfig
@@ -70,8 +70,8 @@ func load(args []string) (Config, error) {
 		return Config{}, fmt.Errorf("get working directory: %w", err)
 	}
 
-	if err := LoadDotEnv(filepath.Join(workingDir, ".env")); err != nil {
-		return Config{}, err
+	if loadErr := LoadDotEnv(filepath.Join(workingDir, ".env")); loadErr != nil {
+		return Config{}, loadErr
 	}
 
 	normalizedArgs := normalizeArgs(args)
@@ -82,17 +82,29 @@ func load(args []string) (Config, error) {
 	transport := flagSet.String("transport", "stdio", "Transport mode: stdio, sse, streamable-http")
 	port := flagSet.String("port", "8080", "Port for HTTP transports")
 	enableUI := flagSet.Bool("ui", false, "Enable web UI for testing tools")
-	proxyMode := flagSet.Bool("proxy-mode", false, "Enable dynamic proxy mode: each Swagger endpoint becomes an MCP tool")
+	proxyMode := flagSet.Bool(
+		"proxy-mode",
+		false,
+		"Enable dynamic proxy mode: each Swagger endpoint becomes an MCP tool",
+	)
 	baseURL := flagSet.String("base-url", "", "Override the base URL from the Swagger spec")
 	headers := flagSet.String("headers", "", "Custom headers for proxy requests (name1=value1,name2=value2)")
 	includePaths := flagSet.String("include-paths", "", "Regex patterns for paths to include (comma-separated)")
 	excludePaths := flagSet.String("exclude-paths", "", "Regex patterns for paths to exclude (comma-separated)")
 	includeMethods := flagSet.String("include-methods", "", "HTTP methods to include (comma-separated, e.g. GET,POST)")
 	excludeMethods := flagSet.String("exclude-methods", "", "HTTP methods to exclude (comma-separated)")
-	sseHeaders := flagSet.String("sse-headers", "", "Header names to forward from SSE client requests to proxy API calls (comma-separated, e.g. Authorization,X-Tenant-ID)")
-	httpHeaders := flagSet.String("http-headers", "", "Header names to forward from StreamableHTTP client requests to proxy API calls (comma-separated, e.g. Authorization,X-Tenant-ID)")
-	if err := flagSet.Parse(normalizedArgs); err != nil {
-		return Config{}, err
+	sseHeaders := flagSet.String(
+		"sse-headers",
+		"",
+		"Header names to forward from SSE client requests to proxy API calls (comma-separated, e.g. Authorization,X-Tenant-ID)",
+	)
+	httpHeaders := flagSet.String(
+		"http-headers",
+		"",
+		"Header names to forward from StreamableHTTP client requests to proxy API calls (comma-separated, e.g. Authorization,X-Tenant-ID)",
+	)
+	if parseErr := flagSet.Parse(normalizedArgs); parseErr != nil {
+		return Config{}, parseErr
 	}
 
 	logLevel := strings.TrimSpace(os.Getenv("LOG_LEVEL"))
@@ -111,21 +123,21 @@ func load(args []string) (Config, error) {
 			IncludeMethods: strings.TrimSpace(*includeMethods),
 			ExcludeMethods: strings.TrimSpace(*excludeMethods),
 		},
-		Transport:  strings.TrimSpace(*transport),
-		Port:       strings.TrimSpace(*port),
-		EnableUI:   *enableUI,
-		ProxyMode:  *proxyMode,
-		BaseURL:    strings.TrimSpace(*baseURL),
-		Headers:    strings.TrimSpace(*headers),
+		Transport:   strings.TrimSpace(*transport),
+		Port:        strings.TrimSpace(*port),
+		EnableUI:    *enableUI,
+		ProxyMode:   *proxyMode,
+		BaseURL:     strings.TrimSpace(*baseURL),
+		Headers:     strings.TrimSpace(*headers),
 		SseHeaders:  strings.TrimSpace(*sseHeaders),
-		HttpHeaders: strings.TrimSpace(*httpHeaders),
+		HTTPHeaders: strings.TrimSpace(*httpHeaders),
 	}, nil
 }
 
 func LoadAuthConfig() AuthConfig {
 	apiKeyHeader := strings.TrimSpace(os.Getenv("API_KEY_HEADER"))
 	if apiKeyHeader == "" {
-		apiKeyHeader = "X-API-Key"
+		apiKeyHeader = "X-API-Key" //nolint:gosec // G101: header name, not a credential
 	}
 	apiKeyIn := strings.TrimSpace(os.Getenv("API_KEY_IN"))
 	if apiKeyIn == "" {
@@ -189,13 +201,13 @@ func LoadDotEnv(path string) error {
 		if existingValue, exists := os.LookupEnv(key); exists && strings.TrimSpace(existingValue) != "" {
 			continue
 		}
-		if err := os.Setenv(key, value); err != nil {
-			return fmt.Errorf("set env %s: %w", key, err)
+		if setErr := os.Setenv(key, value); setErr != nil {
+			return fmt.Errorf("set env %s: %w", key, setErr)
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scan .env file: %w", err)
+	if scanErr := scanner.Err(); scanErr != nil {
+		return fmt.Errorf("scan .env file: %w", scanErr)
 	}
 	return nil
 }

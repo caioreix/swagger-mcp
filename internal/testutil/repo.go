@@ -15,7 +15,7 @@ func RepoRoot(tb testing.TB) string {
 	}
 
 	for {
-		if _, err := os.Stat(filepath.Join(current, "go.mod")); err == nil {
+		if _, statErr := os.Stat(filepath.Join(current, "go.mod")); statErr == nil {
 			return current
 		}
 		parent := filepath.Dir(current)

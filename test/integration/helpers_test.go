@@ -17,49 +17,49 @@ import (
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
 
-var (
-	buildOnce  sync.Once
-	binaryPath string
-	binaryDir  string
-	buildErr   error
-)
+type testBinaryCache struct {
+	once     sync.Once
+	path     string
+	dir      string
+	errBuild error
+}
+
+var testBinary testBinaryCache //nolint:gochecknoglobals // needed for TestMain
 
 func TestMain(m *testing.M) {
-	code := m.Run()
-	if binaryDir != "" {
-		_ = os.RemoveAll(binaryDir)
+	var err error
+	testBinary.dir, err = os.MkdirTemp("", "swagger-mcp-bin-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "create binary temp dir: %v\n", err)
+		os.Exit(1)
 	}
+	code := m.Run()
+	_ = os.RemoveAll(testBinary.dir)
 	os.Exit(code)
 }
 
 func compiledBinary(tb testing.TB) string {
 	tb.Helper()
 
-	buildOnce.Do(func() {
+	testBinary.once.Do(func() {
 		repoRoot := testutil.RepoRoot(tb)
-		var err error
-		binaryDir, err = os.MkdirTemp("", "swagger-mcp-bin-*")
-		if err != nil {
-			buildErr = fmt.Errorf("create binary temp dir: %w", err)
-			return
-		}
 		name := "swagger-mcp"
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
-		binaryPath = filepath.Join(binaryDir, name)
-		command := exec.Command("go", "build", "-o", binaryPath, "./cmd/swagger-mcp")
+		testBinary.path = filepath.Join(testBinary.dir, name)
+		command := exec.Command("go", "build", "-o", testBinary.path, "./cmd/swagger-mcp")
 		command.Dir = repoRoot
 		output, err := command.CombinedOutput()
 		if err != nil {
-			buildErr = fmt.Errorf("build binary: %w\n%s", err, string(output))
+			testBinary.errBuild = fmt.Errorf("build binary: %w\n%s", err, string(output))
 		}
 	})
 
-	if buildErr != nil {
-		tb.Fatalf("compile binary: %v", buildErr)
+	if testBinary.errBuild != nil {
+		tb.Fatalf("compile binary: %v", testBinary.errBuild)
 	}
-	return binaryPath
+	return testBinary.path
 }
 
 func runBinary(tb testing.TB, args []string, stdinLines []string, env map[string]string) (string, string) {
@@ -85,18 +85,18 @@ func runBinary(tb testing.TB, args []string, stdinLines []string, env map[string
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 
-	if err := command.Start(); err != nil {
-		tb.Fatalf("start binary: %v", err)
+	if startErr := command.Start(); startErr != nil {
+		tb.Fatalf("start binary: %v", startErr)
 	}
 	for _, line := range stdinLines {
-		if _, err := stdin.Write([]byte(line + "\n")); err != nil {
-			tb.Fatalf("write stdin: %v", err)
+		if _, writeErr := stdin.Write([]byte(line + "\n")); writeErr != nil {
+			tb.Fatalf("write stdin: %v", writeErr)
 		}
 	}
 	_ = stdin.Close()
 
-	if err := command.Wait(); err != nil {
-		tb.Fatalf("wait for binary: %v\nstderr:\n%s", err, stderr.String())
+	if waitErr := command.Wait(); waitErr != nil {
+		tb.Fatalf("wait for binary: %v\nstderr:\n%s", waitErr, stderr.String())
 	}
 	if ctx.Err() != nil {
 		tb.Fatalf("binary timed out: %v", ctx.Err())
@@ -111,7 +111,7 @@ func fixtureServer(tb testing.TB, fixtureName, contentType string) *httptest.Ser
 	if err != nil {
 		tb.Fatalf("read fixture %s: %v", fixtureName, err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", contentType)
 		_, _ = writer.Write(payload)
 	}))

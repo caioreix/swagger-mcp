@@ -1,4 +1,4 @@
-package mcp
+package mcp_test
 
 import (
 	"encoding/json"
@@ -7,19 +7,22 @@ import (
 	"strings"
 	"testing"
 
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
 	"github.com/caioreix/swagger-mcp/internal/config"
+	mcp "github.com/caioreix/swagger-mcp/internal/mcp"
 	"github.com/caioreix/swagger-mcp/internal/openapi"
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
 
-func newTestServer(t *testing.T) *server {
+func newTestServer(t *testing.T) *mcp.ServerAdapter {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	server, err := NewServer(config.Config{WorkingDir: testutil.RepoRoot(t), LogLevel: "error"}, logger)
+	mcpServer, err := mcp.NewServer(config.Config{WorkingDir: testutil.RepoRoot(t), LogLevel: "error"}, logger)
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
 	}
-	return server
+	return mcp.NewServerAdapter(mcpServer)
 }
 
 func decodeResponse(t *testing.T, payload []byte) map[string]any {
@@ -34,7 +37,7 @@ func decodeResponse(t *testing.T, payload []byte) map[string]any {
 func TestInitialize(t *testing.T) {
 	server := newTestServer(t)
 	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 1, "initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": mcpgo.LATEST_PROTOCOL_VERSION,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "1.0.0"},
 	}))
@@ -43,8 +46,8 @@ func TestInitialize(t *testing.T) {
 	}
 
 	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
-	if result["protocolVersion"] != latestProtocolVersion {
-		t.Fatalf("expected protocol version %s, got %#v", latestProtocolVersion, result["protocolVersion"])
+	if result["protocolVersion"] != mcpgo.LATEST_PROTOCOL_VERSION {
+		t.Fatalf("expected protocol version %s, got %#v", mcpgo.LATEST_PROTOCOL_VERSION, result["protocolVersion"])
 	}
 }
 
@@ -69,15 +72,26 @@ func TestToolsList(t *testing.T) {
 
 	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 7 {
-		t.Fatalf("expected 7 tools, got %d", len(tools))
+	if len(tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(tools))
 	}
 
-	expected := []string{"getSwaggerDefinition", "listEndpoints", "listEndpointModels", "generateModelCode", "generateEndpointToolCode", "generateServer", "version"}
-	for index, toolName := range expected {
-		tool := tools[index].(map[string]any)
-		if tool["name"] != toolName {
-			t.Fatalf("expected tool %d to be %q, got %#v", index, toolName, tool["name"])
+	// Collect tool names (mcp-go returns tools alphabetically sorted).
+	toolNames := make(map[string]bool, len(tools))
+	for _, rawTool := range tools {
+		tool := rawTool.(map[string]any)
+		toolNames[tool["name"].(string)] = true
+	}
+
+	expected := []string{
+		"getSwaggerDefinition",
+		"listEndpoints",
+		"listEndpointModels",
+		"version",
+	}
+	for _, name := range expected {
+		if !toolNames[name] {
+			t.Fatalf("expected tool %q in tools/list response", name)
 		}
 	}
 }
@@ -147,9 +161,10 @@ func TestUnknownToolReturnsErrorContent(t *testing.T) {
 		t.Fatalf("HandleJSON returned error: %v", err)
 	}
 
-	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
-	if result["isError"] != true {
-		t.Fatalf("expected result to be marked as error: %#v", result)
+	// mcp-go returns a JSON-RPC error (INVALID_PARAMS) when a tool is not found.
+	errorObject := decodeResponse(t, responseBytes)["error"].(map[string]any)
+	if errorObject["code"].(float64) != -32602 {
+		t.Fatalf("expected invalid params code -32602 for unknown tool, got %#v", errorObject)
 	}
 }
 
@@ -211,20 +226,27 @@ func TestUnknownMethod(t *testing.T) {
 
 func TestInvalidToolParams(t *testing.T) {
 	server := newTestServer(t)
-	responseBytes, err := server.HandleJSON([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":123}}`))
+	responseBytes, err := server.HandleJSON(
+		[]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":123}}`),
+	)
 	if err != nil {
 		t.Fatalf("HandleJSON returned error: %v", err)
 	}
 
+	// mcp-go returns INVALID_REQUEST (-32600) when the params cannot be unmarshaled
+	// (e.g. "name" is an integer instead of a string).
 	errorObject := decodeResponse(t, responseBytes)["error"].(map[string]any)
-	if errorObject["code"].(float64) != -32602 {
-		t.Fatalf("expected invalid params code -32602, got %#v", errorObject)
+	code := errorObject["code"].(float64)
+	if code != -32600 && code != -32602 {
+		t.Fatalf("expected parse/invalid error code, got %#v", errorObject)
 	}
 }
 
 func TestNotificationsAreIgnored(t *testing.T) {
 	server := newTestServer(t)
-	responseBytes, err := server.HandleJSON([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`))
+	responseBytes, err := server.HandleJSON(
+		[]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`),
+	)
 	if err != nil {
 		t.Fatalf("HandleJSON returned error: %v", err)
 	}
@@ -250,9 +272,9 @@ func TestProxyToolNameWithAPIPrefix(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got := proxyToolName(ep, tc.apiName)
+		got := mcp.ProxyToolName(ep, tc.apiName)
 		if got != tc.want {
-			t.Errorf("proxyToolName(%q) = %q, want %q", tc.apiName, got, tc.want)
+			t.Errorf("mcp.ProxyToolName(%q) = %q, want %q", tc.apiName, got, tc.want)
 		}
 	}
 }
@@ -263,7 +285,7 @@ func TestProxyToolNameWithoutOperationID(t *testing.T) {
 		Method: "GET",
 	}
 
-	got := proxyToolName(ep, "store")
+	got := mcp.ProxyToolName(ep, "store")
 	want := "store_get-pets-id"
 	if got != want {
 		t.Errorf("proxyToolName = %q, want %q", got, want)

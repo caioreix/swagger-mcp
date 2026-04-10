@@ -18,13 +18,6 @@ func Execute(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer)
 	// Explicit serve subcommand (same behaviour as root default).
 	root.AddCommand(newServeCmd(stdin, stdout, stderr, &code))
 
-	// generate subcommand group.
-	generate := newGenerateCmd()
-	generate.AddCommand(newGenerateServerCmd(stderr))
-	generate.AddCommand(newGenerateToolCmd(stdout))
-	generate.AddCommand(newGenerateModelCmd(stdout))
-	root.AddCommand(generate)
-
 	// inspect subcommand group.
 	inspect := newInspectCmd()
 	inspect.AddCommand(newInspectEndpointsCmd(stdout))
@@ -59,8 +52,7 @@ Swagger/OpenAPI definition and exposes it to AI clients as structured tools.
 AI assistants connected via MCP can:
   • Discover and inspect API endpoints and their parameters
   • Explore data models and JSON schemas
-  • Generate production-ready Go scaffolding (structs, tool handlers, full servers)
-  • Proxy live API requests in real time — no code generation required
+  • Proxy live API requests in real time
 
 Transport modes:
   stdio           (default) communicates over stdin/stdout — ideal for Cursor, Claude Desktop
@@ -80,7 +72,7 @@ Authentication is configured via environment variables:
 Settings can also be placed in a .env file in the working directory.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.toConfig(cmd)
 			if err != nil {
 				return err

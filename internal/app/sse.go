@@ -10,7 +10,9 @@ import (
 	"sync/atomic"
 )
 
-func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders string) int {
+const sseClientBufferSize = 64
+
+func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders string) int { //nolint:gocognit,funlen
 	sseLogger := componentLogger(logger, "app.sse")
 
 	headerNames := parseHeaderNames(sseHeaders)
@@ -29,7 +31,7 @@ func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders 
 		}
 
 		clientID := fmt.Sprintf("client-%d", clientCounter.Add(1))
-		ch := make(chan []byte, 64)
+		ch := make(chan []byte, sseClientBufferSize)
 		mu.Lock()
 		clients[clientID] = ch
 		mu.Unlock()
@@ -54,8 +56,8 @@ func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders 
 		ctx := r.Context()
 		for {
 			select {
-			case msg, ok := <-ch:
-				if !ok {
+			case msg, msgOk := <-ch:
+				if !msgOk {
 					return
 				}
 				fmt.Fprintf(w, "event: message\ndata: %s\n\n", msg)
@@ -108,7 +110,7 @@ func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders 
 	})
 
 	// CORS preflight
-	mux.HandleFunc("OPTIONS /message", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("OPTIONS /message", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -116,7 +118,12 @@ func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders 
 	})
 
 	sseLogger.Info("starting SSE server", "port", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	sseLogger.Warn("SSE transport is deprecated; migrate to streamable-http instead")
+	server := &http.Server{ //nolint:gosec // timeout configured by caller
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		sseLogger.Error("SSE server error", "error", err)
 		return 1
 	}

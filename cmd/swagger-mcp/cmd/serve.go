@@ -27,7 +27,7 @@ All flags can be set via environment variables using the SWAGGER_MCP_ prefix
 precedence over environment variables.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := opts.toConfig(cmd)
 			if err != nil {
 				return err

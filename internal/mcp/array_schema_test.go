@@ -1,4 +1,4 @@
-package mcp
+package mcp_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/caioreix/swagger-mcp/internal/config"
+	mcp "github.com/caioreix/swagger-mcp/internal/mcp"
 	"github.com/caioreix/swagger-mcp/internal/openapi"
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
@@ -34,7 +35,7 @@ func TestProxyInputSchemaArrayHasItems(t *testing.T) {
 		},
 	}
 
-	schema := proxyInputSchema(document, op)
+	schema := mcp.ProxyInputSchema(document, op)
 	props := schema["properties"].(map[string]any)
 
 	// filter should have items
@@ -52,9 +53,13 @@ func TestProxyInputSchemaArrayHasItems(t *testing.T) {
 	}
 }
 
-func TestCachedSwaggerProxyToolsHaveValidArraySchemas(t *testing.T) {
+func TestCachedSwaggerProxyToolsHaveValidArraySchemas(t *testing.T) { //nolint:gocognit
 	repoRoot := testutil.RepoRoot(t)
-	cacheFile := filepath.Join(repoRoot, "swagger-cache", "7818dc7eea16165d9af678f18040762460601a02ebd5792d4326b9f3a87befc9.json")
+	cacheFile := filepath.Join(
+		repoRoot,
+		"swagger-cache",
+		"7818dc7eea16165d9af678f18040762460601a02ebd5792d4326b9f3a87befc9.json",
+	)
 	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
 		t.Skip("cached swagger file not found")
 	}
@@ -64,7 +69,7 @@ func TestCachedSwaggerProxyToolsHaveValidArraySchemas(t *testing.T) {
 		t.Fatalf("ReadDefinitionFromFile: %v", err)
 	}
 
-	tools, err := buildProxyTools(document, "http://localhost", nil, "", config.AuthConfig{}, "")
+	tools, err := mcp.BuildProxyTools(document, "http://localhost", nil, "", config.AuthConfig{}, "")
 	if err != nil {
 		t.Fatalf("buildProxyTools: %v", err)
 	}
@@ -80,7 +85,7 @@ func TestCachedSwaggerProxyToolsHaveValidArraySchemas(t *testing.T) {
 		}
 		if props, ok := schema["properties"].(map[string]any); ok {
 			for k, v := range props {
-				if subSchema, ok := v.(map[string]any); ok {
+				if subSchema, subOk := v.(map[string]any); subOk {
 					checkSchema(subSchema, path+"."+k)
 				}
 			}
@@ -126,7 +131,7 @@ func TestProxyInputSchemaSwagger2BodyExpandsReferencedSchema(t *testing.T) {
 		},
 	}
 
-	schema := proxyInputSchema(document, op)
+	schema := mcp.ProxyInputSchema(document, op)
 	props := schema["properties"].(map[string]any)
 
 	if _, ok := props["email"]; !ok {
@@ -156,9 +161,9 @@ func TestBuildRequestBodySwagger2BodyArgumentAndFallback(t *testing.T) {
 	}
 
 	// Explicit body argument should win.
-	fromBodyArg := buildRequestBody(op, map[string]any{
-		"orgId":  "1",
-		"expand": true,
+	fromBodyArg := mcp.BuildRequestBody(op, map[string]any{
+		"orgId":   "1",
+		"expand":  true,
 		"X-Trace": "t",
 		"body": map[string]any{
 			"email":    "a@b.com",
@@ -174,7 +179,7 @@ func TestBuildRequestBodySwagger2BodyArgumentAndFallback(t *testing.T) {
 	}
 
 	// Flattened args should be used when explicit body is not present.
-	fromFallback := buildRequestBody(op, map[string]any{
+	fromFallback := mcp.BuildRequestBody(op, map[string]any{
 		"orgId":    "1",
 		"expand":   true,
 		"X-Trace":  "t",
@@ -204,7 +209,7 @@ func TestBuildRequestBodyOpenAPI3ExplicitBodyArgument(t *testing.T) {
 		},
 	}
 
-	fromBodyArg := buildRequestBody(op, map[string]any{
+	fromBodyArg := mcp.BuildRequestBody(op, map[string]any{
 		"body": map[string]any{
 			"email":    "a@b.com",
 			"password": "secret",
@@ -230,7 +235,7 @@ func TestBuildRequestBodyOpenAPI3ExplicitRequestBodyJSONArgument(t *testing.T) {
 		},
 	}
 
-	fromBodyArg := buildRequestBody(op, map[string]any{
+	fromBodyArg := mcp.BuildRequestBody(op, map[string]any{
 		"requestBody": `{"email":"a@b.com","password":"secret"}`,
 	})
 	bodyMap, ok := fromBodyArg.(map[string]any)

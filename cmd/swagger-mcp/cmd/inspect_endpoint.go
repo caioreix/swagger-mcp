@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -32,12 +33,12 @@ Example:
     --method=GET`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if path == "" {
-				return fmt.Errorf("--path is required")
+				return errors.New("--path is required")
 			}
 			if method == "" {
-				return fmt.Errorf("--method is required")
+				return errors.New("--method is required")
 			}
 
 			document, err := resolveDocument(swaggerURL, swaggerFile)

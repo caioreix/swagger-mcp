@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -20,7 +21,7 @@ func parseDefinitionBytes(data []byte, pathHint string) (map[string]any, string,
 	}
 	document, ok := parsedYAML.(map[string]any)
 	if !ok {
-		return nil, "", fmt.Errorf("parsed YAML root is not an object")
+		return nil, "", errors.New("parsed YAML root is not an object")
 	}
 
 	kind, err := validateDefinition(document)
@@ -49,5 +50,5 @@ func validateDefinition(document map[string]any) (string, error) {
 	if _, ok := document["swagger"]; ok {
 		return "swagger", nil
 	}
-	return "", fmt.Errorf("invalid Swagger definition: missing required \"openapi\" or \"swagger\" field")
+	return "", errors.New("invalid Swagger definition: missing required \"openapi\" or \"swagger\" field")
 }

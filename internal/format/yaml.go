@@ -98,7 +98,7 @@ func parseYAMLMap(lines []yamlLine, index *int, indent int) (map[string]any, err
 	return result, nil
 }
 
-func parseYAMLList(lines []yamlLine, index *int, indent int) ([]any, error) {
+func parseYAMLList(lines []yamlLine, index *int, indent int) ([]any, error) { //nolint:gocognit
 	result := make([]any, 0)
 	for *index < len(lines) {
 		line := lines[*index]
@@ -132,7 +132,7 @@ func parseYAMLList(lines []yamlLine, index *int, indent int) ([]any, error) {
 				return nil, fmt.Errorf("invalid YAML sequence item at line %d", *index)
 			}
 			itemMap := map[string]any{}
-			if rawValue == "" {
+			if rawValue == "" { //nolint:nestif // YAML inline mapping requires nested block-child resolution
 				if *index < len(lines) && lines[*index].indent > indent {
 					child, err := parseYAMLBlock(lines, index, lines[*index].indent)
 					if err != nil {
@@ -220,7 +220,7 @@ func parseYAMLScalar(raw string) (any, error) {
 	case "false":
 		return false, nil
 	case "null", "~":
-		return nil, nil
+		return nil, nil //nolint:nilnil // intentional: YAML null maps to Go nil
 	}
 
 	if integer, err := strconv.ParseInt(raw, 10, 64); err == nil {

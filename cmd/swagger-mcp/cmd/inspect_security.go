@@ -31,7 +31,7 @@ Examples:
   swagger-mcp inspect security --swagger-file=./api.yaml --format=json`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			document, err := resolveDocument(swaggerURL, swaggerFile)
 			if err != nil {
 				return err
@@ -40,7 +40,7 @@ Examples:
 			schemes := openapi.ExtractSecuritySchemes(document)
 
 			switch strings.ToLower(format) {
-			case "json":
+			case formatJSON:
 				enc := json.NewEncoder(stdout)
 				enc.SetIndent("", "  ")
 				return enc.Encode(schemes)

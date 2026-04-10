@@ -8,7 +8,7 @@ import (
 	"log/slog"
 )
 
-func serveStdio(handler jsonHandler, logger *slog.Logger, stdin io.Reader, stdout io.Writer) int {
+func serveStdio(handler jsonHandler, logger *slog.Logger, stdin io.Reader, stdout io.Writer) int { //nolint:gocognit
 	if logger == nil {
 		logger = slog.Default()
 	}

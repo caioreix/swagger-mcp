@@ -11,6 +11,8 @@ import (
 	"github.com/caioreix/swagger-mcp/internal/openapi"
 )
 
+const formatJSON = "json"
+
 func newInspectEndpointsCmd(stdout io.Writer) *cobra.Command {
 	var (
 		swaggerURL     string
@@ -37,7 +39,7 @@ Examples:
   swagger-mcp inspect endpoints --swagger-url=... --format=json`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			document, err := resolveDocument(swaggerURL, swaggerFile)
 			if err != nil {
 				return err
@@ -49,15 +51,17 @@ Examples:
 			}
 
 			if includePaths != "" || excludePaths != "" || includeMethods != "" || excludeMethods != "" {
-				filter, err := openapi.NewEndpointFilter(includePaths, excludePaths, includeMethods, excludeMethods)
-				if err != nil {
-					return fmt.Errorf("build filter: %w", err)
+				filter, filterErr := openapi.NewEndpointFilter(
+					includePaths, excludePaths, includeMethods, excludeMethods,
+				)
+				if filterErr != nil {
+					return fmt.Errorf("build filter: %w", filterErr)
 				}
 				endpoints = openapi.FilterEndpoints(endpoints, filter)
 			}
 
 			switch strings.ToLower(format) {
-			case "json":
+			case formatJSON:
 				enc := json.NewEncoder(stdout)
 				enc.SetIndent("", "  ")
 				return enc.Encode(endpoints)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ Examples:
   swagger-mcp inspect models --swagger-file=./api.yaml --format=json`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			document, err := resolveDocument(swaggerURL, swaggerFile)
 			if err != nil {
 				return err
@@ -41,7 +42,7 @@ Examples:
 			schemas := openapi.ListSchemas(document)
 
 			switch strings.ToLower(format) {
-			case "json":
+			case formatJSON:
 				enc := json.NewEncoder(stdout)
 				enc.SetIndent("", "  ")
 				return enc.Encode(schemas)
@@ -52,7 +53,7 @@ Examples:
 					if schemaType == "" {
 						schemaType = "object"
 					}
-					rows = append(rows, []string{s.Name, schemaType, fmt.Sprintf("%d", s.Properties)})
+					rows = append(rows, []string{s.Name, schemaType, strconv.Itoa(s.Properties)})
 				}
 				printTable(stdout, []string{"NAME", "TYPE", "PROPERTIES"}, rows)
 				fmt.Fprintf(stdout, "\n%d model(s)\n", len(schemas))

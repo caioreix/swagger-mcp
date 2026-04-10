@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -39,10 +40,10 @@ type definitionFetchResult struct {
 
 func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefinition, error) {
 	if strings.TrimSpace(url) == "" {
-		return SavedDefinition{}, fmt.Errorf("URL is required")
+		return SavedDefinition{}, errors.New("URL is required")
 	}
 	if strings.TrimSpace(saveLocation) == "" {
-		return SavedDefinition{}, fmt.Errorf("save location is required")
+		return SavedDefinition{}, errors.New("save location is required")
 	}
 
 	fetched, err := r.fetchDefinition(url, nil)
@@ -50,8 +51,8 @@ func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefin
 		return SavedDefinition{}, err
 	}
 
-	if err := os.MkdirAll(saveLocation, 0o755); err != nil {
-		return SavedDefinition{}, fmt.Errorf("create save directory: %w", err)
+	if mkdirErr := os.MkdirAll(saveLocation, 0o750); mkdirErr != nil {
+		return SavedDefinition{}, fmt.Errorf("create save directory: %w", mkdirErr)
 	}
 
 	filePath := filepath.Join(saveLocation, hashURL(url)+".json")
@@ -59,8 +60,8 @@ func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefin
 	if err != nil {
 		return SavedDefinition{}, fmt.Errorf("marshal swagger definition: %w", err)
 	}
-	if err := os.WriteFile(filePath, formatted, 0o644); err != nil {
-		return SavedDefinition{}, fmt.Errorf("write swagger definition: %w", err)
+	if writeErr := os.WriteFile(filePath, formatted, 0o600); writeErr != nil {
+		return SavedDefinition{}, fmt.Errorf("write swagger definition: %w", writeErr)
 	}
 
 	r.logger.Info("downloaded swagger definition", "url", url, "path", filePath, "type", fetched.definitionType)
@@ -69,7 +70,7 @@ func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefin
 
 func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 	cacheDir := filepath.Join(r.WorkingDir, "swagger-cache")
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
 		return "", fmt.Errorf("create cache directory: %w", err)
 	}
 
@@ -83,12 +84,17 @@ func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 	}
 
 	if !validCache {
-		fetched, err := r.fetchDefinition(url, nil)
-		if err != nil {
-			return "", err
+		fetched, fetchErr := r.fetchDefinition(url, nil)
+		if fetchErr != nil {
+			return "", fetchErr
 		}
-		if err := writeCachedDefinition(cachePath, metadataPath, newCacheMetadata(url, cacheKey, fetched, currentTimestamp()), fetched.document); err != nil {
-			return "", err
+		if writeErr := writeCachedDefinition(
+			cachePath,
+			metadataPath,
+			newCacheMetadata(url, cacheKey, fetched, currentTimestamp()),
+			fetched.document,
+		); writeErr != nil {
+			return "", writeErr
 		}
 		r.logger.Info("cached swagger definition", "url", url, "path", cachePath)
 		return cachePath, nil
@@ -101,8 +107,11 @@ func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 
 	validationTimestamp := currentTimestamp()
 	if fetched.statusCode == http.StatusNotModified {
-		if err := writeCacheMetadata(metadataPath, metadataForNotModified(metadata, fetched, validationTimestamp)); err != nil {
-			return "", err
+		if writeMetaErr := writeCacheMetadata(
+			metadataPath,
+			metadataForNotModified(metadata, fetched, validationTimestamp),
+		); writeMetaErr != nil {
+			return "", writeMetaErr
 		}
 		r.logger.Info("reusing cached swagger definition", "url", url, "path", cachePath, "result", "not_modified")
 		return cachePath, nil
@@ -113,15 +122,23 @@ func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 		return "", fmt.Errorf("marshal cached swagger definition: %w", err)
 	}
 	if contentHash == metadata.ContentHash {
-		if err := writeCacheMetadata(metadataPath, newCacheMetadata(url, cacheKey, fetched, validationTimestamp).withContentHash(contentHash)); err != nil {
-			return "", err
+		if writeMetaErr := writeCacheMetadata(
+			metadataPath,
+			newCacheMetadata(url, cacheKey, fetched, validationTimestamp).withContentHash(contentHash),
+		); writeMetaErr != nil {
+			return "", writeMetaErr
 		}
 		r.logger.Info("reusing cached swagger definition", "url", url, "path", cachePath, "result", "unchanged")
 		return cachePath, nil
 	}
 
-	if err := writeCachedDefinitionContent(cachePath, metadataPath, newCacheMetadata(url, cacheKey, fetched, validationTimestamp).withContentHash(contentHash), content); err != nil {
-		return "", err
+	if writeErr := writeCachedDefinitionContent(
+		cachePath,
+		metadataPath,
+		newCacheMetadata(url, cacheKey, fetched, validationTimestamp).withContentHash(contentHash),
+		content,
+	); writeErr != nil {
+		return "", writeErr
 	}
 	r.logger.Info("updated cached swagger definition", "url", url, "path", cachePath)
 	return cachePath, nil
@@ -131,7 +148,7 @@ func (r SourceResolver) fetchDefinition(url string, metadata *cacheMetadata) (de
 	conditionalRequest := metadata != nil && (metadata.ETag != "" || metadata.LastModified != "")
 	r.logger.Info("fetching swagger definition", "url", url, "conditional", conditionalRequest)
 
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return definitionFetchResult{}, fmt.Errorf("create request: %w", err)
 	}
@@ -162,7 +179,11 @@ func (r SourceResolver) fetchDefinition(url string, metadata *cacheMetadata) (de
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		r.logger.Warn("swagger definition request failed", "url", url, "status", response.Status)
-		return definitionFetchResult{}, fmt.Errorf("failed to download Swagger definition from %s: unexpected status %s", url, response.Status)
+		return definitionFetchResult{}, fmt.Errorf(
+			"failed to download Swagger definition from %s: unexpected status %s",
+			url,
+			response.Status,
+		)
 	}
 
 	body, err := io.ReadAll(response.Body)
@@ -196,14 +217,30 @@ func (r SourceResolver) loadValidCache(cachePath, metadataPath, url, cacheKey st
 			return cacheMetadata{}, false, nil
 		}
 		if errors.Is(err, errInvalidCacheMetadata) {
-			r.logger.Warn("cached swagger metadata is invalid; refreshing cache", "url", url, "path", metadataPath, "error", err.Error())
+			r.logger.Warn(
+				"cached swagger metadata is invalid; refreshing cache",
+				"url",
+				url,
+				"path",
+				metadataPath,
+				"error",
+				err.Error(),
+			)
 			return cacheMetadata{}, false, nil
 		}
 		return cacheMetadata{}, false, err
 	}
 
-	if err := validateCacheMetadata(metadata, url, cacheKey); err != nil {
-		r.logger.Warn("cached swagger metadata does not match cache entry; refreshing cache", "url", url, "path", metadataPath, "error", err.Error())
+	if validErr := validateCacheMetadata(metadata, url, cacheKey); validErr != nil {
+		r.logger.Warn(
+			"cached swagger metadata does not match cache entry; refreshing cache",
+			"url",
+			url,
+			"path",
+			metadataPath,
+			"error",
+			validErr.Error(),
+		)
 		return cacheMetadata{}, false, nil
 	}
 	if hashContent(content) != metadata.ContentHash {
@@ -230,7 +267,7 @@ func writeCachedDefinition(cachePath, metadataPath string, metadata cacheMetadat
 }
 
 func writeCachedDefinitionContent(cachePath, metadataPath string, metadata cacheMetadata, content []byte) error {
-	if err := os.WriteFile(cachePath, content, 0o644); err != nil {
+	if err := os.WriteFile(cachePath, content, 0o600); err != nil {
 		return fmt.Errorf("write cached swagger definition: %w", err)
 	}
 	if err := writeCacheMetadata(metadataPath, metadata); err != nil {
@@ -245,8 +282,8 @@ func readCacheMetadata(path string) (cacheMetadata, error) {
 		return cacheMetadata{}, err
 	}
 	var metadata cacheMetadata
-	if err := json.Unmarshal(content, &metadata); err != nil {
-		return cacheMetadata{}, fmt.Errorf("%w: %v", errInvalidCacheMetadata, err)
+	if unmarshalErr := json.Unmarshal(content, &metadata); unmarshalErr != nil {
+		return cacheMetadata{}, fmt.Errorf("%w: %w", errInvalidCacheMetadata, unmarshalErr)
 	}
 	metadata.URL = strings.TrimSpace(metadata.URL)
 	metadata.CacheKey = strings.TrimSpace(metadata.CacheKey)
@@ -264,8 +301,8 @@ func writeCacheMetadata(path string, metadata cacheMetadata) error {
 	if err != nil {
 		return fmt.Errorf("marshal cached swagger metadata: %w", err)
 	}
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return fmt.Errorf("write cached swagger metadata: %w", err)
+	if writeErr := os.WriteFile(path, content, 0o600); writeErr != nil {
+		return fmt.Errorf("write cached swagger metadata: %w", writeErr)
 	}
 	return nil
 }
@@ -273,15 +310,15 @@ func writeCacheMetadata(path string, metadata cacheMetadata) error {
 func validateCacheMetadata(metadata cacheMetadata, url, cacheKey string) error {
 	switch {
 	case metadata.URL == "":
-		return fmt.Errorf("missing url")
+		return errors.New("missing url")
 	case metadata.URL != url:
-		return fmt.Errorf("url mismatch")
+		return errors.New("url mismatch")
 	case metadata.CacheKey == "":
-		return fmt.Errorf("missing cache key")
+		return errors.New("missing cache key")
 	case metadata.CacheKey != cacheKey:
-		return fmt.Errorf("cache key mismatch")
+		return errors.New("cache key mismatch")
 	case metadata.ContentHash == "":
-		return fmt.Errorf("missing content hash")
+		return errors.New("missing content hash")
 	default:
 		return nil
 	}

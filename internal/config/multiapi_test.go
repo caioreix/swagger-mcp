@@ -1,10 +1,12 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	config "github.com/caioreix/swagger-mcp/internal/config"
 )
 
 func TestLoadMultiAPIConfig_Basic(t *testing.T) {
@@ -31,7 +33,7 @@ apis:
 		t.Fatal(err)
 	}
 
-	apis, err := LoadMultiAPIConfig(path)
+	apis, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
@@ -96,7 +98,7 @@ apis:
 		t.Fatal(err)
 	}
 
-	apis, err := LoadMultiAPIConfig(path)
+	apis, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
@@ -124,7 +126,7 @@ apis:
 		t.Fatal(err)
 	}
 
-	_, err := LoadMultiAPIConfig(path)
+	_, err := config.LoadMultiAPIConfig(path)
 	if err == nil {
 		t.Fatal("expected error for missing name, got nil")
 	}
@@ -145,7 +147,7 @@ apis:
 	}
 
 	// "apis:" with no block items parses as empty string — treated as no APIs configured.
-	apis, err := LoadMultiAPIConfig(path)
+	apis, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
@@ -164,7 +166,7 @@ other_key: value
 		t.Fatal(err)
 	}
 
-	apis, err := LoadMultiAPIConfig(path)
+	apis, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
@@ -174,7 +176,7 @@ other_key: value
 }
 
 func TestLoadMultiAPIConfig_FileNotFound(t *testing.T) {
-	_, err := LoadMultiAPIConfig("/nonexistent/path/.swagger-mcp.yaml")
+	_, err := config.LoadMultiAPIConfig("/nonexistent/path/.swagger-mcp.yaml")
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}
@@ -197,9 +199,9 @@ func TestExpandEnvVars(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got := expandEnvVars(tc.input)
+		got := config.ExpandEnvVars(tc.input)
 		if got != tc.want {
-			t.Errorf("expandEnvVars(%q) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("config.ExpandEnvVars(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }
@@ -218,7 +220,7 @@ apis:
 		t.Fatal(err)
 	}
 
-	apis, err := LoadMultiAPIConfig(path)
+	apis, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}

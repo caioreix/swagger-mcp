@@ -48,22 +48,42 @@ func (o *serveOptions) addFlags(cmd *cobra.Command) {
 		"Enable the built-in web UI at http://localhost:<port>/ (env: SWAGGER_MCP_UI)")
 	f.BoolVar(&o.proxyMode, "proxy-mode", false,
 		"Turn every Swagger endpoint into a live MCP tool — no code generation required (env: SWAGGER_MCP_PROXY_MODE)")
-	f.StringVar(&o.baseURL, "base-url", "",
-		"Override the base URL from the Swagger spec — useful for staging or local environments (env: SWAGGER_MCP_BASE_URL)")
-	f.StringVar(&o.headers, "headers", "",
-		"Static headers added to every proxy request — comma-separated key=value pairs, e.g. X-Tenant=acme (env: SWAGGER_MCP_HEADERS)")
-	f.StringVar(&o.includePaths, "include-paths", "",
-		"Regex patterns for API paths to expose as tools — comma-separated, e.g. ^/pets.*,^/users.* (env: SWAGGER_MCP_INCLUDE_PATHS)")
+	f.StringVar(
+		&o.baseURL,
+		"base-url",
+		"",
+		"Override the base URL from the Swagger spec — useful for staging or local environments (env: SWAGGER_MCP_BASE_URL)",
+	)
+	f.StringVar(
+		&o.headers,
+		"headers",
+		"",
+		"Static headers added to every proxy request — comma-separated key=value pairs, e.g. X-Tenant=acme (env: SWAGGER_MCP_HEADERS)",
+	)
+	f.StringVar(
+		&o.includePaths,
+		"include-paths",
+		"",
+		"Regex patterns for API paths to expose as tools — comma-separated, e.g. ^/pets.*,^/users.* (env: SWAGGER_MCP_INCLUDE_PATHS)",
+	)
 	f.StringVar(&o.excludePaths, "exclude-paths", "",
 		"Regex patterns for API paths to hide from tools — comma-separated (env: SWAGGER_MCP_EXCLUDE_PATHS)")
 	f.StringVar(&o.includeMethods, "include-methods", "",
 		"HTTP methods to expose as tools — comma-separated, e.g. GET,POST (env: SWAGGER_MCP_INCLUDE_METHODS)")
 	f.StringVar(&o.excludeMethods, "exclude-methods", "",
 		"HTTP methods to hide from tools — comma-separated, e.g. DELETE,PUT (env: SWAGGER_MCP_EXCLUDE_METHODS)")
-	f.StringVar(&o.sseHeaders, "sse-headers", "",
-		"Request headers forwarded from SSE clients to proxy API calls — comma-separated (env: SWAGGER_MCP_SSE_HEADERS)")
-	f.StringVar(&o.httpHeaders, "http-headers", "",
-		"Request headers forwarded from StreamableHTTP clients to proxy API calls — comma-separated (env: SWAGGER_MCP_HTTP_HEADERS)")
+	f.StringVar(
+		&o.sseHeaders,
+		"sse-headers",
+		"",
+		"Request headers forwarded from SSE clients to proxy API calls — comma-separated (env: SWAGGER_MCP_SSE_HEADERS)",
+	)
+	f.StringVar(
+		&o.httpHeaders,
+		"http-headers",
+		"",
+		"Request headers forwarded from StreamableHTTP clients to proxy API calls — comma-separated (env: SWAGGER_MCP_HTTP_HEADERS)",
+	)
 	f.StringVar(&o.configFile, "config", "",
 		"Path to a swagger-mcp.yaml file defining multiple API profiles for proxy mode (env: SWAGGER_MCP_CONFIG)")
 
@@ -80,8 +100,8 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, fmt.Errorf("get working directory: %w", err)
 	}
-	if err := config.LoadDotEnv(filepath.Join(workingDir, ".env")); err != nil {
-		return config.Config{}, err
+	if loadErr := config.LoadDotEnv(filepath.Join(workingDir, ".env")); loadErr != nil {
+		return config.Config{}, loadErr
 	}
 
 	transport := envOr(cmd, "transport", o.transport, "SWAGGER_MCP_TRANSPORT")
@@ -115,21 +135,21 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 		BaseURL:     envOr(cmd, "base-url", o.baseURL, "SWAGGER_MCP_BASE_URL"),
 		Headers:     envOr(cmd, "headers", o.headers, "SWAGGER_MCP_HEADERS"),
 		SseHeaders:  envOr(cmd, "sse-headers", o.sseHeaders, "SWAGGER_MCP_SSE_HEADERS"),
-		HttpHeaders: envOr(cmd, "http-headers", o.httpHeaders, "SWAGGER_MCP_HTTP_HEADERS"),
+		HTTPHeaders: envOr(cmd, "http-headers", o.httpHeaders, "SWAGGER_MCP_HTTP_HEADERS"),
 	}
 
 	configPath := envOr(cmd, "config", o.configFile, "SWAGGER_MCP_CONFIG")
 	if configPath == "" {
 		// Auto-discover the default config file in the working directory.
 		defaultPath := filepath.Join(workingDir, config.DefaultMultiAPIConfigFile)
-		if _, err := os.Stat(defaultPath); err == nil {
+		if _, statErr := os.Stat(defaultPath); statErr == nil {
 			configPath = defaultPath
 		}
 	}
 	if configPath != "" {
-		apis, err := config.LoadMultiAPIConfig(configPath)
-		if err != nil {
-			return config.Config{}, err
+		apis, apisErr := config.LoadMultiAPIConfig(configPath)
+		if apisErr != nil {
+			return config.Config{}, apisErr
 		}
 		cfg.APIs = apis
 	}
@@ -167,8 +187,8 @@ func resolveDocument(swaggerURL, swaggerFile string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get working directory: %w", err)
 	}
-	if err := config.LoadDotEnv(filepath.Join(workingDir, ".env")); err != nil {
-		return nil, err
+	if loadErr := config.LoadDotEnv(filepath.Join(workingDir, ".env")); loadErr != nil {
+		return nil, loadErr
 	}
 	resolver := openapi.NewSourceResolver(workingDir, swaggerURL)
 	if swaggerFile != "" {
@@ -178,7 +198,7 @@ func resolveDocument(swaggerURL, swaggerFile string) (map[string]any, error) {
 }
 
 // printTable prints a simple aligned two-dimensional table to out.
-func printTable(out io.Writer, headers []string, rows [][]string) {
+func printTable(out io.Writer, headers []string, rows [][]string) { //nolint:gocognit
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)

@@ -1,20 +1,21 @@
-package openapi
+package openapi_test
 
 import (
 	"encoding/json"
 	"sort"
 	"testing"
 
+	"github.com/caioreix/swagger-mcp/internal/openapi"
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
 
 func TestListEndpointsGoldenPetstore(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
 
-	endpoints, err := ListEndpoints(document)
+	endpoints, err := openapi.ListEndpoints(document)
 	if err != nil {
 		t.Fatalf("ListEndpoints returned error: %v", err)
 	}
@@ -29,12 +30,12 @@ func TestListEndpointsGoldenPetstore(t *testing.T) {
 }
 
 func TestListEndpointModelsPetstore(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
 
-	models, err := ListEndpointModels(document, "/pets", "POST")
+	models, err := openapi.ListEndpointModels(document, "/pets", "POST")
 	if err != nil {
 		t.Fatalf("ListEndpointModels returned error: %v", err)
 	}
@@ -57,12 +58,12 @@ func TestListEndpointModelsPetstore(t *testing.T) {
 }
 
 func TestListEndpointsOpenAPI31(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
 
-	endpoints, err := ListEndpoints(document)
+	endpoints, err := openapi.ListEndpoints(document)
 	if err != nil {
 		t.Fatalf("ListEndpoints returned error: %v", err)
 	}
@@ -75,12 +76,12 @@ func TestListEndpointsOpenAPI31(t *testing.T) {
 }
 
 func TestListEndpointModelsOpenAPI31(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "openapi-3.1.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
 
-	models, err := ListEndpointModels(document, "/widgets", "POST")
+	models, err := openapi.ListEndpointModels(document, "/widgets", "POST")
 	if err != nil {
 		t.Fatalf("ListEndpointModels returned error: %v", err)
 	}
@@ -95,11 +96,11 @@ func TestListEndpointModelsOpenAPI31(t *testing.T) {
 }
 
 func TestExtractBaseURLSwagger2(t *testing.T) {
-	document, err := ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
+	document, err := openapi.ReadDefinitionFromFile(testutil.FixturePath(t, "petstore.json"))
 	if err != nil {
 		t.Fatalf("ReadDefinitionFromFile returned error: %v", err)
 	}
-	url := ExtractBaseURL(document)
+	url := openapi.ExtractBaseURL(document)
 	if url != "http://petstore.swagger.io/api" {
 		t.Fatalf("expected http://petstore.swagger.io/api, got %q", url)
 	}
@@ -112,7 +113,7 @@ func TestExtractBaseURLOpenAPI3(t *testing.T) {
 			map[string]any{"url": "https://api.example.com/v1"},
 		},
 	}
-	url := ExtractBaseURL(document)
+	url := openapi.ExtractBaseURL(document)
 	if url != "https://api.example.com/v1" {
 		t.Fatalf("expected https://api.example.com/v1, got %q", url)
 	}
@@ -131,7 +132,7 @@ func TestExtractBaseURLOpenAPI3WithVariables(t *testing.T) {
 			},
 		},
 	}
-	url := ExtractBaseURL(document)
+	url := openapi.ExtractBaseURL(document)
 	if url != "https://api.example.com/api/v2" {
 		t.Fatalf("expected https://api.example.com/api/v2, got %q", url)
 	}
@@ -139,7 +140,7 @@ func TestExtractBaseURLOpenAPI3WithVariables(t *testing.T) {
 
 func TestExtractBaseURLNoHost(t *testing.T) {
 	document := map[string]any{"swagger": "2.0"}
-	url := ExtractBaseURL(document)
+	url := openapi.ExtractBaseURL(document)
 	if url != "" {
 		t.Fatalf("expected empty string, got %q", url)
 	}
@@ -165,7 +166,7 @@ func TestExtractSecuritySchemesSwagger2(t *testing.T) {
 			},
 		},
 	}
-	schemes := ExtractSecuritySchemes(document)
+	schemes := openapi.ExtractSecuritySchemes(document)
 	if len(schemes) != 2 {
 		t.Fatalf("expected 2 schemes, got %d", len(schemes))
 	}
@@ -195,7 +196,7 @@ func TestExtractSecuritySchemesOpenAPI3(t *testing.T) {
 			},
 		},
 	}
-	schemes := ExtractSecuritySchemes(document)
+	schemes := openapi.ExtractSecuritySchemes(document)
 	if len(schemes) != 2 {
 		t.Fatalf("expected 2 schemes, got %d", len(schemes))
 	}
@@ -223,7 +224,7 @@ func TestExtractEndpointSecurityOperationLevel(t *testing.T) {
 			},
 		},
 	}
-	reqs, err := ExtractEndpointSecurity(document, "/pets", "GET")
+	reqs, err := openapi.ExtractEndpointSecurity(document, "/pets", "GET")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +250,7 @@ func TestExtractEndpointSecurityFallbackGlobal(t *testing.T) {
 			},
 		},
 	}
-	reqs, err := ExtractEndpointSecurity(document, "/pets", "GET")
+	reqs, err := openapi.ExtractEndpointSecurity(document, "/pets", "GET")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,7 +261,7 @@ func TestExtractEndpointSecurityFallbackGlobal(t *testing.T) {
 
 func TestExtractSecuritySchemesEmpty(t *testing.T) {
 	document := map[string]any{"swagger": "2.0"}
-	schemes := ExtractSecuritySchemes(document)
+	schemes := openapi.ExtractSecuritySchemes(document)
 	if len(schemes) != 0 {
 		t.Fatalf("expected 0 schemes, got %d", len(schemes))
 	}

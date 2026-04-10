@@ -35,6 +35,12 @@ vet:
 fmt:
 	gofmt -w $(GOFILES)
 
+lint:
+	golangci-lint run
+
+lint-fix:
+	golangci-lint run --fix
+
 clean:
 	rm -rf build
 

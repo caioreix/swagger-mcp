@@ -26,8 +26,8 @@ func TestBinaryStartupInitializeAndToolsList(t *testing.T) {
 	}
 	result := responses[1]["result"].(map[string]any)
 	tools := result["tools"].([]any)
-	if len(tools) != 7 {
-		t.Fatalf("expected 7 tools, got %d", len(tools))
+	if len(tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(tools))
 	}
 }
 
@@ -48,14 +48,19 @@ func TestBinaryStartupPreloadsCLIURL(t *testing.T) {
 	}
 
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		requests++
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(payload)
 	}))
 	defer server.Close()
 
-	stdout, stderr := runBinary(t, []string{"--swagger-url=" + server.URL}, nil, map[string]string{"LOG_LEVEL": "error"})
+	stdout, stderr := runBinary(
+		t,
+		[]string{"--swagger-url=" + server.URL},
+		nil,
+		map[string]string{"LOG_LEVEL": "error"},
+	)
 	if strings.TrimSpace(stdout) != "" {
 		t.Fatalf("expected no stdout without MCP input, got:\n%s", stdout)
 	}

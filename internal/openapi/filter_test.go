@@ -1,9 +1,14 @@
-package openapi
+package openapi_test
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+
+	"github.com/caioreix/swagger-mcp/internal/openapi"
+)
 
 func TestEndpointFilterMatchAll(t *testing.T) {
-	filter, err := NewEndpointFilter("", "", "", "")
+	filter, err := openapi.NewEndpointFilter("", "", "", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -16,7 +21,7 @@ func TestEndpointFilterMatchAll(t *testing.T) {
 }
 
 func TestEndpointFilterIncludePaths(t *testing.T) {
-	filter, err := NewEndpointFilter("^/pets.*", "", "", "")
+	filter, err := openapi.NewEndpointFilter("^/pets.*", "", "", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -32,7 +37,7 @@ func TestEndpointFilterIncludePaths(t *testing.T) {
 }
 
 func TestEndpointFilterExcludePaths(t *testing.T) {
-	filter, err := NewEndpointFilter("", ".*delete.*", "", "")
+	filter, err := openapi.NewEndpointFilter("", ".*delete.*", "", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -45,7 +50,7 @@ func TestEndpointFilterExcludePaths(t *testing.T) {
 }
 
 func TestEndpointFilterIncludeMethods(t *testing.T) {
-	filter, err := NewEndpointFilter("", "", "GET,POST", "")
+	filter, err := openapi.NewEndpointFilter("", "", "GET,POST", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -61,7 +66,7 @@ func TestEndpointFilterIncludeMethods(t *testing.T) {
 }
 
 func TestEndpointFilterExcludeMethods(t *testing.T) {
-	filter, err := NewEndpointFilter("", "", "", "DELETE,PATCH")
+	filter, err := openapi.NewEndpointFilter("", "", "", "DELETE,PATCH")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -74,7 +79,7 @@ func TestEndpointFilterExcludeMethods(t *testing.T) {
 }
 
 func TestEndpointFilterCombined(t *testing.T) {
-	filter, err := NewEndpointFilter("^/pets.*,^/users.*", ".*admin.*", "GET,POST", "")
+	filter, err := openapi.NewEndpointFilter("^/pets.*,^/users.*", ".*admin.*", "GET,POST", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -96,14 +101,14 @@ func TestEndpointFilterCombined(t *testing.T) {
 }
 
 func TestEndpointFilterInvalidRegex(t *testing.T) {
-	_, err := NewEndpointFilter("[invalid", "", "", "")
+	_, err := openapi.NewEndpointFilter("[invalid", "", "", "")
 	if err == nil {
 		t.Fatal("expected error for invalid regex")
 	}
 }
 
 func TestEndpointFilterMultipleIncludePatterns(t *testing.T) {
-	filter, err := NewEndpointFilter("^/v1/.*,^/v2/.*", "", "", "")
+	filter, err := openapi.NewEndpointFilter("^/v1/.*,^/v2/.*", "", "", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
@@ -119,7 +124,7 @@ func TestEndpointFilterMultipleIncludePatterns(t *testing.T) {
 }
 
 func TestFilterEndpoints(t *testing.T) {
-	endpoints := []Endpoint{
+	endpoints := []openapi.Endpoint{
 		{Path: "/pets", Method: "GET"},
 		{Path: "/pets", Method: "POST"},
 		{Path: "/pets/{id}", Method: "GET"},
@@ -127,26 +132,26 @@ func TestFilterEndpoints(t *testing.T) {
 		{Path: "/users", Method: "GET"},
 	}
 
-	filter, err := NewEndpointFilter("^/pets.*", "", "GET", "")
+	filter, err := openapi.NewEndpointFilter("^/pets.*", "", "GET", "")
 	if err != nil {
 		t.Fatalf("NewEndpointFilter: %v", err)
 	}
 
-	filtered := FilterEndpoints(endpoints, filter)
+	filtered := openapi.FilterEndpoints(endpoints, filter)
 	if len(filtered) != 2 {
 		t.Fatalf("expected 2 filtered endpoints, got %d", len(filtered))
 	}
-	if filtered[0].Path != "/pets" || filtered[0].Method != "GET" {
+	if filtered[0].Path != "/pets" || filtered[0].Method != http.MethodGet {
 		t.Fatalf("expected /pets GET, got %s %s", filtered[0].Path, filtered[0].Method)
 	}
-	if filtered[1].Path != "/pets/{id}" || filtered[1].Method != "GET" {
+	if filtered[1].Path != "/pets/{id}" || filtered[1].Method != http.MethodGet {
 		t.Fatalf("expected /pets/{id} GET, got %s %s", filtered[1].Path, filtered[1].Method)
 	}
 }
 
 func TestFilterEndpointsNilFilter(t *testing.T) {
-	endpoints := []Endpoint{{Path: "/pets", Method: "GET"}}
-	filtered := FilterEndpoints(endpoints, nil)
+	endpoints := []openapi.Endpoint{{Path: "/pets", Method: "GET"}}
+	filtered := openapi.FilterEndpoints(endpoints, nil)
 	if len(filtered) != 1 {
 		t.Fatalf("expected nil filter to return all endpoints, got %d", len(filtered))
 	}

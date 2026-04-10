@@ -1,9 +1,16 @@
 package openapi
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+)
+
+const (
+	securityTypeAPIKey = "apiKey"
+	securityTypeBasic  = "basic"
+	securityTypeOAuth2 = "oauth2"
 )
 
 type Endpoint struct {
@@ -29,13 +36,13 @@ func ListEndpoints(document map[string]any) ([]Endpoint, error) {
 	endpoints := make([]Endpoint, 0)
 	supportedMethods := []string{"get", "post", "put", "delete", "patch", "options", "head"}
 	for _, endpointPath := range sortedKeys(paths) {
-		pathItem, ok := asMap(paths[endpointPath])
-		if !ok {
+		pathItem, pathItemOk := asMap(paths[endpointPath])
+		if !pathItemOk {
 			continue
 		}
 		for _, method := range supportedMethods {
-			operation, ok := asMap(pathItem[method])
-			if !ok {
+			operation, operationOk := asMap(pathItem[method])
+			if !operationOk {
 				continue
 			}
 			endpoints = append(endpoints, Endpoint{
@@ -54,7 +61,7 @@ func ListEndpoints(document map[string]any) ([]Endpoint, error) {
 func FindOperation(document map[string]any, endpointPath, method string) (map[string]any, error) {
 	paths, ok := asMap(document["paths"])
 	if !ok {
-		return nil, fmt.Errorf("Swagger definition has no paths")
+		return nil, errors.New("swagger definition has no paths")
 	}
 	pathItem, ok := asMap(paths[endpointPath])
 	if !ok {
@@ -67,7 +74,7 @@ func FindOperation(document map[string]any, endpointPath, method string) (map[st
 	return operation, nil
 }
 
-func ListEndpointModels(document map[string]any, endpointPath, method string) ([]Model, error) {
+func ListEndpointModels(document map[string]any, endpointPath, method string) ([]Model, error) { //nolint:gocognit
 	operation, err := FindOperation(document, endpointPath, method)
 	if err != nil {
 		return nil, err
@@ -79,17 +86,17 @@ func ListEndpointModels(document map[string]any, endpointPath, method string) ([
 	if parameters, ok := asSlice(operation["parameters"]); ok {
 		for _, rawParameter := range parameters {
 			parameter := DerefForCodegen(document, rawParameter)
-			if schema, ok := asMap(parameter["schema"]); ok {
+			if schema, schemaOk := asMap(parameter["schema"]); schemaOk {
 				extractReferencedModels(document, schema, processedRefs, &models)
 			}
 		}
 	}
 
 	if requestBody, ok := asMap(operation["requestBody"]); ok {
-		if content, ok := asMap(requestBody["content"]); ok {
+		if content, contentOk := asMap(requestBody["content"]); contentOk {
 			for _, mediaType := range sortedKeys(content) {
 				mediaValue, _ := asMap(content[mediaType])
-				if schema, ok := asMap(mediaValue["schema"]); ok {
+				if schema, schemaOk := asMap(mediaValue["schema"]); schemaOk {
 					extractReferencedModels(document, schema, processedRefs, &models)
 				}
 			}
@@ -99,13 +106,13 @@ func ListEndpointModels(document map[string]any, endpointPath, method string) ([
 	if responses, ok := asMap(operation["responses"]); ok {
 		for _, statusCode := range sortedKeys(responses) {
 			response := DerefForCodegen(document, responses[statusCode])
-			if schema, ok := asMap(response["schema"]); ok {
+			if schema, schemaOk := asMap(response["schema"]); schemaOk {
 				extractReferencedModels(document, schema, processedRefs, &models)
 			}
-			if content, ok := asMap(response["content"]); ok {
+			if content, contentOk := asMap(response["content"]); contentOk {
 				for _, mediaType := range sortedKeys(content) {
 					mediaValue, _ := asMap(content[mediaType])
-					if schema, ok := asMap(mediaValue["schema"]); ok {
+					if schema, schemaOk := asMap(mediaValue["schema"]); schemaOk {
 						extractReferencedModels(document, schema, processedRefs, &models)
 					}
 				}
@@ -118,13 +125,13 @@ func ListEndpointModels(document map[string]any, endpointPath, method string) ([
 
 func LookupSchema(document map[string]any, modelName string) (map[string]any, bool) {
 	if definitions, ok := asMap(document["definitions"]); ok {
-		if schema, ok := asMap(definitions[modelName]); ok {
+		if schema, schemaOk := asMap(definitions[modelName]); schemaOk {
 			return schema, true
 		}
 	}
 	if components, ok := asMap(document["components"]); ok {
-		if schemas, ok := asMap(components["schemas"]); ok {
-			if schema, ok := asMap(schemas[modelName]); ok {
+		if schemas, schemasOk := asMap(components["schemas"]); schemasOk {
+			if schema, schemaOk := asMap(schemas[modelName]); schemaOk {
 				return schema, true
 			}
 		}
@@ -152,7 +159,7 @@ func ListSchemas(document map[string]any) []SchemaDefinition {
 					Type:   stringValue(def["type"]),
 					Schema: def,
 				}
-				if props, ok := asMap(def["properties"]); ok {
+				if props, propsOk := asMap(def["properties"]); propsOk {
 					sd.Properties = len(props)
 				}
 				result = append(result, sd)
@@ -168,7 +175,7 @@ func ListSchemas(document map[string]any) []SchemaDefinition {
 
 	// OpenAPI 3.x: components.schemas
 	if components, ok := asMap(document["components"]); ok {
-		if schemas, ok := asMap(components["schemas"]); ok {
+		if schemas, schemasOk := asMap(components["schemas"]); schemasOk {
 			return collect(schemas)
 		}
 	}
@@ -202,10 +209,10 @@ func DerefForCodegen(document map[string]any, value any) map[string]any {
 	if !ok {
 		return map[string]any{}
 	}
-	if ref, ok := object["$ref"].(string); ok {
+	if ref, refOk := object["$ref"].(string); refOk {
 		resolved, err := ResolveRef(document, ref)
 		if err == nil {
-			if resolvedMap, ok := asMap(resolved); ok {
+			if resolvedMap, resolvedMapOk := asMap(resolved); resolvedMapOk {
 				return resolvedMap
 			}
 		}
@@ -213,7 +220,12 @@ func DerefForCodegen(document map[string]any, value any) map[string]any {
 	return object
 }
 
-func extractReferencedModels(document map[string]any, schema map[string]any, processedRefs map[string]struct{}, models *[]Model) {
+func extractReferencedModels( //nolint:gocognit
+	document map[string]any,
+	schema map[string]any,
+	processedRefs map[string]struct{},
+	models *[]Model,
+) {
 	if ref, ok := schema["$ref"].(string); ok {
 		if _, seen := processedRefs[ref]; seen {
 			return
@@ -223,7 +235,7 @@ func extractReferencedModels(document map[string]any, schema map[string]any, pro
 		resolved, err := ResolveRef(document, ref)
 		if err == nil {
 			*models = append(*models, Model{Name: modelName, Schema: resolved})
-			if resolvedMap, ok := asMap(resolved); ok {
+			if resolvedMap, resolvedMapOk := asMap(resolved); resolvedMapOk {
 				extractReferencedModels(document, resolvedMap, processedRefs, models)
 			}
 		}
@@ -235,7 +247,7 @@ func extractReferencedModels(document map[string]any, schema map[string]any, pro
 	}
 	if properties, ok := asMap(schema["properties"]); ok {
 		for _, propertyName := range sortedKeys(properties) {
-			if propertySchema, ok := asMap(properties[propertyName]); ok {
+			if propertySchema, propSchemaOk := asMap(properties[propertyName]); propSchemaOk {
 				extractReferencedModels(document, propertySchema, processedRefs, models)
 			}
 		}
@@ -243,7 +255,7 @@ func extractReferencedModels(document map[string]any, schema map[string]any, pro
 	for _, keyword := range []string{"allOf", "anyOf", "oneOf"} {
 		if values, ok := asSlice(schema[keyword]); ok {
 			for _, rawValue := range values {
-				if valueMap, ok := asMap(rawValue); ok {
+				if valueMap, valueMapOk := asMap(rawValue); valueMapOk {
 					extractReferencedModels(document, valueMap, processedRefs, models)
 				}
 			}
@@ -287,7 +299,7 @@ func stringSlice(value any) []string {
 	}
 	result := make([]string, 0, len(items))
 	for _, item := range items {
-		if text, ok := item.(string); ok {
+		if text, textOk := item.(string); textOk {
 			result = append(result, text)
 		}
 	}
@@ -303,19 +315,8 @@ func stringSlice(value any) []string {
 func ExtractBaseURL(document map[string]any) string {
 	// OpenAPI 3.x: servers array
 	if servers, ok := asSlice(document["servers"]); ok && len(servers) > 0 {
-		if server, ok := asMap(servers[0]); ok {
-			url := stringValue(server["url"])
-			if variables, ok := asMap(server["variables"]); ok {
-				for name, rawVar := range variables {
-					if varObj, ok := asMap(rawVar); ok {
-						defaultVal := stringValue(varObj["default"])
-						if defaultVal != "" {
-							url = strings.ReplaceAll(url, "{"+name+"}", defaultVal)
-						}
-					}
-				}
-			}
-			return strings.TrimRight(url, "/")
+		if u, found := resolveOpenAPI3ServerURL(servers); found {
+			return u
 		}
 	}
 
@@ -332,6 +333,24 @@ func ExtractBaseURL(document map[string]any) string {
 		}
 	}
 	return strings.TrimRight(scheme+"://"+host+basePath, "/")
+}
+
+func resolveOpenAPI3ServerURL(servers []any) (string, bool) {
+	server, serverOk := asMap(servers[0])
+	if !serverOk {
+		return "", false
+	}
+	u := stringValue(server["url"])
+	if variables, varsOk := asMap(server["variables"]); varsOk {
+		for name, rawVar := range variables {
+			if varObj, varObjOk := asMap(rawVar); varObjOk {
+				if defaultVal := stringValue(varObj["default"]); defaultVal != "" {
+					u = strings.ReplaceAll(u, "{"+name+"}", defaultVal)
+				}
+			}
+		}
+	}
+	return strings.TrimRight(u, "/"), true
 }
 
 // ExtractBasePath returns the basePath from a Swagger 2.0 document (e.g. "/api/v1").
@@ -375,8 +394,8 @@ func ExtractSecuritySchemes(document map[string]any) []SecurityScheme {
 	// Swagger 2.0: securityDefinitions
 	if defs, ok := asMap(document["securityDefinitions"]); ok {
 		for _, name := range sortedKeys(defs) {
-			def, ok := asMap(defs[name])
-			if !ok {
+			def, defOk := asMap(defs[name])
+			if !defOk {
 				continue
 			}
 			s := parseSecuritySchemeSwagger2(name, def)
@@ -387,10 +406,10 @@ func ExtractSecuritySchemes(document map[string]any) []SecurityScheme {
 
 	// OpenAPI 3.x: components.securitySchemes
 	if components, ok := asMap(document["components"]); ok {
-		if secSchemes, ok := asMap(components["securitySchemes"]); ok {
+		if secSchemes, secSchemesOk := asMap(components["securitySchemes"]); secSchemesOk {
 			for _, name := range sortedKeys(secSchemes) {
-				def, ok := asMap(secSchemes[name])
-				if !ok {
+				def, defOk := asMap(secSchemes[name])
+				if !defOk {
 					continue
 				}
 				s := parseSecuritySchemeOpenAPI3(name, def)
@@ -404,13 +423,13 @@ func ExtractSecuritySchemes(document map[string]any) []SecurityScheme {
 func parseSecuritySchemeSwagger2(name string, def map[string]any) SecurityScheme {
 	s := SecurityScheme{Name: name, Type: stringValue(def["type"])}
 	switch s.Type {
-	case "apiKey":
+	case securityTypeAPIKey:
 		s.In = stringValue(def["in"])
 		s.ParamName = stringValue(def["name"])
-	case "basic":
+	case securityTypeBasic:
 		s.Type = "http"
-		s.Scheme = "basic"
-	case "oauth2":
+		s.Scheme = securityTypeBasic
+	case securityTypeOAuth2:
 		s.FlowType = stringValue(def["flow"])
 		s.TokenURL = stringValue(def["tokenUrl"])
 		s.AuthURL = stringValue(def["authorizationUrl"])
@@ -424,23 +443,23 @@ func parseSecuritySchemeSwagger2(name string, def map[string]any) SecurityScheme
 	return s
 }
 
-func parseSecuritySchemeOpenAPI3(name string, def map[string]any) SecurityScheme {
+func parseSecuritySchemeOpenAPI3(name string, def map[string]any) SecurityScheme { //nolint:gocognit
 	s := SecurityScheme{Name: name, Type: stringValue(def["type"])}
 	switch s.Type {
-	case "apiKey":
+	case securityTypeAPIKey:
 		s.In = stringValue(def["in"])
 		s.ParamName = stringValue(def["name"])
 	case "http":
 		s.Scheme = strings.ToLower(stringValue(def["scheme"]))
 		s.BearerFmt = stringValue(def["bearerFormat"])
-	case "oauth2":
+	case securityTypeOAuth2:
 		if flows, ok := asMap(def["flows"]); ok {
 			for _, flowType := range []string{"clientCredentials", "authorizationCode", "implicit", "password"} {
-				if flow, ok := asMap(flows[flowType]); ok {
+				if flow, flowOk := asMap(flows[flowType]); flowOk {
 					s.FlowType = flowType
 					s.TokenURL = stringValue(flow["tokenUrl"])
 					s.AuthURL = stringValue(flow["authorizationUrl"])
-					if scopeMap, ok := asMap(flow["scopes"]); ok {
+					if scopeMap, scopeMapOk := asMap(flow["scopes"]); scopeMapOk {
 						s.Scopes = make(map[string]string)
 						for k := range scopeMap {
 							s.Scopes[k] = stringValue(scopeMap[k])
@@ -475,15 +494,15 @@ func ExtractEndpointSecurity(document map[string]any, endpointPath, method strin
 	return nil, nil
 }
 
-func parseSecurityRequirements(security []any) []SecurityRequirement {
+func parseSecurityRequirements(security []any) []SecurityRequirement { //nolint:gocognit
 	reqs := make([]SecurityRequirement, 0)
 	for _, item := range security {
 		if reqMap, ok := asMap(item); ok {
 			for name := range reqMap {
 				req := SecurityRequirement{SchemeName: name}
-				if scopes, ok := asSlice(reqMap[name]); ok {
+				if scopes, scopesOk := asSlice(reqMap[name]); scopesOk {
 					for _, scope := range scopes {
-						if s, ok := scope.(string); ok {
+						if s, sOk := scope.(string); sOk {
 							req.Scopes = append(req.Scopes, s)
 						}
 					}

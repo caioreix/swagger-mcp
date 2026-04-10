@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,9 +39,9 @@ Example:
   echo "SWAGGER_FILEPATH=$(swagger-mcp download --url=... --output=.)" > .swagger-mcp`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if strings.TrimSpace(url) == "" {
-				return fmt.Errorf("--url is required")
+				return errors.New("--url is required")
 			}
 
 			workingDir, err := os.Getwd()
@@ -48,8 +49,8 @@ Example:
 				return fmt.Errorf("get working directory: %w", err)
 			}
 
-			if err := config.LoadDotEnv(filepath.Join(workingDir, ".env")); err != nil {
-				return err
+			if loadErr := config.LoadDotEnv(filepath.Join(workingDir, ".env")); loadErr != nil {
+				return loadErr
 			}
 
 			if output == "" {
