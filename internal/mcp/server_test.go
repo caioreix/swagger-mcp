@@ -84,10 +84,10 @@ func TestToolsList(t *testing.T) {
 	}
 
 	expected := []string{
-		"getSwaggerDefinition",
-		"listEndpoints",
-		"listEndpointModels",
-		"version",
+		"swagger_get_definition",
+		"swagger_get_version",
+		"swagger_list_endpoint_models",
+		"swagger_list_endpoints",
 	}
 	for _, name := range expected {
 		if !toolNames[name] {
@@ -116,7 +116,7 @@ func TestPromptsList(t *testing.T) {
 func TestVersionTool(t *testing.T) {
 	server := newTestServer(t)
 	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 4, "tools/call", map[string]any{
-		"name":      "version",
+		"name":      "swagger_get_version",
 		"arguments": map[string]any{},
 	}))
 	if err != nil {
@@ -134,7 +134,7 @@ func TestVersionTool(t *testing.T) {
 func TestListEndpointsTool(t *testing.T) {
 	server := newTestServer(t)
 	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 5, "tools/call", map[string]any{
-		"name": "listEndpoints",
+		"name": "swagger_list_endpoints",
 		"arguments": map[string]any{
 			"swaggerFilePath": testutil.FixturePath(t, "petstore.json"),
 		},

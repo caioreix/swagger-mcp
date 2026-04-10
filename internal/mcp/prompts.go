@@ -65,7 +65,7 @@ func buildAddEndpointMessages(target, source string) []mcpgo.PromptMessage {
 		mcpgo.NewPromptMessage(
 			mcpgo.RoleAssistant,
 			mcpgo.NewTextContent(
-				"**Step 1:** First, we need to get the Swagger definition.\n\nI'll use the `mcp__getSwaggerDefinition` tool to download and save it locally.",
+				"**Step 1:** First, we need to get the Swagger definition.\n\nI'll use the `mcp__swagger_get_definition` tool to download and save it locally.",
 			),
 		),
 		mcpgo.NewPromptMessage(
@@ -75,14 +75,14 @@ func buildAddEndpointMessages(target, source string) []mcpgo.PromptMessage {
 		mcpgo.NewPromptMessage(
 			mcpgo.RoleAssistant,
 			mcpgo.NewTextContent(
-				"**Step 2:** Now I'll list all available endpoints using the `mcp__listEndpoints` tool.\n\nThis will help us understand the API structure and confirm the endpoint we want to implement.",
+				"**Step 2:** Now I'll list all available endpoints using the `mcp__swagger_list_endpoints` tool.\n\nThis will help us understand the API structure and confirm the endpoint we want to implement.",
 			),
 		),
 		mcpgo.NewPromptMessage(mcpgo.RoleUser, mcpgo.NewTextContent("Please show me the available endpoints.")),
 		mcpgo.NewPromptMessage(
 			mcpgo.RoleAssistant,
 			mcpgo.NewTextContent(
-				"**Step 3:** Let's identify the models used by our target endpoint with the `mcp__listEndpointModels` tool.\n\nThis will show us all the data models we need to generate.",
+				"**Step 3:** Let's identify the models used by our target endpoint with the `mcp__swagger_list_endpoint_models` tool.\n\nThis will show us all the data models we need to generate.",
 			),
 		),
 		mcpgo.NewPromptMessage(

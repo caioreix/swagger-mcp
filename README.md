@@ -363,13 +363,13 @@ echo "SWAGGER_FILEPATH=$(swagger-mcp download --url=https://petstore.swagger.io/
 
 | Tool | Description |
 |---|---|
-| `getSwaggerDefinition` | Download and cache a Swagger/OpenAPI document |
-| `listEndpoints` | List all API paths with HTTP methods and summaries |
-| `listEndpointModels` | List request/response models for a specific endpoint |
+| `swagger_get_definition` | Download and cache a Swagger/OpenAPI document |
+| `swagger_list_endpoints` | List all API paths with HTTP methods and summaries |
+| `swagger_list_endpoint_models` | List request/response models for a specific endpoint |
 | `generateModelCode` | Generate Go structs from a schema model |
 | `generateEndpointToolCode` | Generate a Go MCP tool scaffold for an endpoint |
 | `generateServer` | Generate a complete, runnable Go MCP server project |
-| `version` | Return the server version |
+| `swagger_get_version` | Return the server version |
 
 ## 🗣️ MCP Prompts
 
