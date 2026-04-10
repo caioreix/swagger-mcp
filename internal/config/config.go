@@ -34,6 +34,17 @@ type FilterConfig struct {
 	ExcludeMethods string // comma-separated HTTP methods to exclude
 }
 
+// APIConfig defines a named API profile used in multi-API mode.
+// Each profile corresponds to one entry in the "apis" array of swagger-mcp.yaml.
+type APIConfig struct {
+	Name       string
+	SwaggerURL string
+	BaseURL    string
+	Auth       AuthConfig
+	Headers    string
+	Filter     FilterConfig
+}
+
 type Config struct {
 	SwaggerURL string
 	LogLevel   string
@@ -48,6 +59,9 @@ type Config struct {
 	Headers     string // custom headers (name1=value1,name2=value2)
 	SseHeaders  string // comma-separated header names to forward from SSE requests to proxy calls
 	HttpHeaders string // comma-separated header names to forward from StreamableHTTP requests to proxy calls
+	// APIs holds multiple named API profiles loaded from the swagger-mcp.yaml config file.
+	// When populated, each API generates its own set of proxy tools.
+	APIs []APIConfig
 }
 
 func load(args []string) (Config, error) {

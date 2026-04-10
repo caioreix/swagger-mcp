@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/caioreix/swagger-mcp/internal/config"
+	"github.com/caioreix/swagger-mcp/internal/openapi"
 	"github.com/caioreix/swagger-mcp/internal/testutil"
 )
 
@@ -229,5 +230,42 @@ func TestNotificationsAreIgnored(t *testing.T) {
 	}
 	if responseBytes != nil {
 		t.Fatalf("expected nil response for notifications, got %s", string(responseBytes))
+	}
+}
+
+func TestProxyToolNameWithAPIPrefix(t *testing.T) {
+	ep := openapi.Endpoint{
+		Path:        "/pets/{id}",
+		Method:      "GET",
+		OperationID: "getPetById",
+	}
+
+	cases := []struct {
+		apiName string
+		want    string
+	}{
+		{"", "getpetbyid"},
+		{"petstore", "petstore_getpetbyid"},
+		{"my-api", "my-api_getpetbyid"},
+	}
+
+	for _, tc := range cases {
+		got := proxyToolName(ep, tc.apiName)
+		if got != tc.want {
+			t.Errorf("proxyToolName(%q) = %q, want %q", tc.apiName, got, tc.want)
+		}
+	}
+}
+
+func TestProxyToolNameWithoutOperationID(t *testing.T) {
+	ep := openapi.Endpoint{
+		Path:   "/pets/{id}",
+		Method: "GET",
+	}
+
+	got := proxyToolName(ep, "store")
+	want := "store_get-pets-id"
+	if got != want {
+		t.Errorf("proxyToolName = %q, want %q", got, want)
 	}
 }
