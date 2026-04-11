@@ -4,8 +4,12 @@ BINARY := build/swagger-mcp
 GO_DIRS := cmd internal test
 GOFILES := $(shell find $(GO_DIRS) -type f -name '*.go')
 ARGS ?=
+EVAL_FILE ?= evaluation.xml
+EVAL_PROVIDER ?= copilot
+EVAL_MODEL ?=
+EVAL_OUTPUT ?=
 
-.PHONY: help build run test vet fmt clean inspector verify
+.PHONY: help build run test vet fmt clean inspector verify evaluate
 
 help:
 	@printf "%s\n" \
@@ -17,7 +21,8 @@ help:
 		"  make fmt        Run gofmt on Go source files" \
 		"  make clean      Remove build artifacts" \
 		"  make inspector  Build and open the MCP inspector" \
-		"  make verify     Run build, test, and vet"
+		"  make verify     Run build, test, and vet" \
+		"  make evaluate   Run evaluation against $(EVAL_FILE) (EVAL_PROVIDER=copilot|anthropic|openai)"
 
 build:
 	mkdir -p $(dir $(BINARY))
@@ -47,4 +52,17 @@ clean:
 inspector: build
 	npx @modelcontextprotocol/inspector ./$(BINARY)
 
-verify: build test vet
+evaluate: build
+	@cd scripts && \
+	[ -d .venv ] || uv venv -q .venv && \
+	uv pip install -q -r requirements.txt --python .venv/bin/python3 && \
+	GITHUB_TOKEN=$$(gh auth token) .venv/bin/python3 evaluation.py \
+		-p $(EVAL_PROVIDER) \
+		$(if $(EVAL_MODEL),-m $(EVAL_MODEL)) \
+		-t stdio \
+		-c ../$(BINARY) \
+		-s $(abspath testdata/petstore.json) \
+		$(if $(EVAL_OUTPUT),-o $(EVAL_OUTPUT)) \
+		../$(EVAL_FILE)
+
+

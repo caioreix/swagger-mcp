@@ -78,9 +78,13 @@ Error Handling:
 		if err != nil {
 			return mcpgo.NewToolResultError(err.Error()), nil
 		}
-		saveLocation := req.GetString("saveLocation", "")
-		if strings.TrimSpace(saveLocation) == "" {
-			return mcpgo.NewToolResultError("saveLocation is required"), nil
+		saveLocation, err := req.RequireString("saveLocation")
+		if err != nil {
+			return mcpgo.NewToolResultError(err.Error()), nil
+		}
+		saveLocation = strings.TrimSpace(saveLocation)
+		if saveLocation == "" {
+			return mcpgo.NewToolResultError("saveLocation cannot be empty or contain only whitespace"), nil
 		}
 		if !filepath.IsAbs(saveLocation) {
 			saveLocation = filepath.Join(cfg.WorkingDir, saveLocation)

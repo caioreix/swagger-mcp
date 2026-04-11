@@ -1,0 +1,53 @@
+<evaluation>
+  <!-- Questions are based on the Petstore API loaded from testdata/petstore.json -->
+
+  <qa_pair>
+    <question>How many total API operations are defined in the Petstore API?</question>
+    <answer>4</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the operationId of the operation that lists all pets (GET /pets)?</question>
+    <answer>findPets</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the name of the request body model used when creating a new pet (POST /pets)?</question>
+    <answer>NewPet</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>How many distinct models are referenced by the GET /pets endpoint (including request, response, and nested models)?</question>
+    <answer>3</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Which property of the Pet model has enum values?</question>
+    <answer>status</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the name of the property in the Pet model that refers to the nested Category model?</question>
+    <answer>category</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the only required field in the NewPet model?</question>
+    <answer>name</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the name of the integer-typed field in the Error model?</question>
+    <answer>code</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the path of the operation with operationId "deletePet"?</question>
+    <answer>/pets/{id}</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>How many distinct models are referenced by the DELETE /pets/{id} endpoint?</question>
+    <answer>1</answer>
+  </qa_pair>
+</evaluation>

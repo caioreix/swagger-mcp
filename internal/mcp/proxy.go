@@ -48,7 +48,10 @@ func registerProxyTools(s *mcpgoserver.MCPServer, tools []proxyTool, cfg config.
 
 // buildMCPGoTool converts a proxyTool's definition into a mcp-go Tool.
 func buildMCPGoTool(pt proxyTool) mcpgo.Tool {
-	opts := []mcpgo.ToolOption{mcpgo.WithDescription(pt.Definition.Description)}
+	opts := []mcpgo.ToolOption{
+		mcpgo.WithDescription(pt.Definition.Description),
+		mcpgo.WithToolAnnotation(inferProxyAnnotations(pt.Method)),
+	}
 
 	if props, ok := pt.Definition.InputSchema["properties"].(map[string]any); ok {
 		required := map[string]bool{}
@@ -68,8 +71,23 @@ func buildMCPGoTool(pt proxyTool) mcpgo.Tool {
 		}
 	}
 
-	tool := mcpgo.NewTool(pt.Definition.Name, opts...)
-	return tool
+	return mcpgo.NewTool(pt.Definition.Name, opts...)
+}
+
+// inferProxyAnnotations returns tool annotations inferred from the HTTP method.
+// GET/HEAD are read-only and idempotent; DELETE is destructive and idempotent;
+// PUT is idempotent but not read-only; POST/PATCH are neither.
+func inferProxyAnnotations(method string) mcpgo.ToolAnnotation {
+	m := strings.ToUpper(method)
+	readOnly := m == "GET" || m == "HEAD"
+	destructive := m == "DELETE"
+	idempotent := readOnly || m == "PUT" || m == "DELETE"
+	return mcpgo.ToolAnnotation{
+		ReadOnlyHint:    new(readOnly),
+		DestructiveHint: new(destructive),
+		IdempotentHint:  new(idempotent),
+		OpenWorldHint:   new(true),
+	}
 }
 
 type proxyTool struct {
