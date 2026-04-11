@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	app "github.com/caioreix/swagger-mcp/internal/app"
@@ -198,11 +199,10 @@ func TestExtractHeadersPartialMatch(t *testing.T) {
 
 func TestSSEMessageHandlerMissingClientID(t *testing.T) {
 	handler := &mockHandler{}
-	logger := slog.Default()
 	headerNames := app.ParseHeaderNames("")
 
 	var clients = make(map[string]chan []byte)
-	mux := buildSSEMux(handler, logger, headerNames, clients)
+	mux := buildSSEMux(handler, headerNames, clients)
 
 	req := httptest.NewRequest(http.MethodPost, "/message", strings.NewReader(`{"method":"test"}`))
 	w := httptest.NewRecorder()
@@ -217,10 +217,9 @@ func TestSSEMessageHandlerUnknownClientIDIsIgnored(t *testing.T) {
 	handler := &mockHandler{
 		responses: [][]byte{[]byte(`{"result":"ok"}`)},
 	}
-	logger := slog.Default()
 	headerNames := app.ParseHeaderNames("")
 	clients := make(map[string]chan []byte)
-	mux := buildSSEMux(handler, logger, headerNames, clients)
+	mux := buildSSEMux(handler, headerNames, clients)
 
 	req := httptest.NewRequest(http.MethodPost, "/message?clientId=unknown", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
@@ -237,8 +236,7 @@ func TestStreamableHTTPPost(t *testing.T) {
 	handler := &mockHandler{
 		responses: [][]byte{[]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`)},
 	}
-	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"method":"test"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -258,8 +256,7 @@ func TestStreamableHTTPPost(t *testing.T) {
 
 func TestStreamableHTTPDeleteSession(t *testing.T) {
 	handler := &mockHandler{}
-	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
 	req.Header.Set("Mcp-Session-Id", "session-1")
@@ -273,8 +270,7 @@ func TestStreamableHTTPDeleteSession(t *testing.T) {
 
 func TestStreamableHTTPOptions(t *testing.T) {
 	handler := &mockHandler{}
-	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
 	w := httptest.NewRecorder()
@@ -287,8 +283,7 @@ func TestStreamableHTTPOptions(t *testing.T) {
 
 func TestStreamableHTTPMethodNotAllowed(t *testing.T) {
 	handler := &mockHandler{}
-	logger := slog.Default()
-	mux := buildStreamableHTTPMux(handler, logger, app.ParseHeaderNames(""))
+	mux := buildStreamableHTTPMux(handler, app.ParseHeaderNames(""))
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
 	w := httptest.NewRecorder()
@@ -302,14 +297,12 @@ func TestStreamableHTTPMethodNotAllowed(t *testing.T) {
 // ── helpers for testability ───────────────────────────────────────────────────
 // buildSSEMux and buildStreamableHTTPMux create the HTTP mux for testing
 // without starting a real TCP listener.
-
 func buildSSEMux(
 	handler app.JSONHandler,
-	logger *slog.Logger,
 	headerNames []string,
 	clients map[string]chan []byte,
 ) *http.ServeMux {
-	var mu = new(syncMu)
+	var mu sync.Mutex
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /message", func(w http.ResponseWriter, r *http.Request) {
@@ -343,14 +336,13 @@ func buildSSEMux(
 			default:
 			}
 		}
-		_ = logger
 		w.WriteHeader(http.StatusAccepted)
 	})
 	return mux
 }
 
-func buildStreamableHTTPMux(handler app.JSONHandler, logger *slog.Logger, headerNames []string) *http.ServeMux {
-	var mu syncMu
+func buildStreamableHTTPMux(handler app.JSONHandler, headerNames []string) *http.ServeMux {
+	var mu sync.Mutex
 	sessions := make(map[string]bool)
 	var counter int64
 
@@ -395,7 +387,6 @@ func buildStreamableHTTPMux(handler app.JSONHandler, logger *slog.Logger, header
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Mcp-Session-Id", sessionID)
-			_ = logger
 			if len(resp) > 0 {
 				w.Write(resp)
 			}
@@ -406,12 +397,6 @@ func buildStreamableHTTPMux(handler app.JSONHandler, logger *slog.Logger, header
 	})
 	return mux
 }
-
-// syncMu is a thin wrapper so test helpers don't need to import sync.
-type syncMu struct{}
-
-func (s *syncMu) Lock()   {}
-func (s *syncMu) Unlock() {}
 
 func readBody(r *http.Request) ([]byte, error) {
 	var buf bytes.Buffer

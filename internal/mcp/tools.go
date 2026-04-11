@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -37,7 +36,6 @@ func registerStaticTools( //nolint:gocognit,funlen
 	resolver openapi.SourceResolver,
 	filter *openapi.EndpointFilter,
 	cfg config.Config,
-	logger *slog.Logger,
 ) {
 	swaggerPathDescription := "Optional path to the Swagger file. Used only if --swagger-url is not provided. You can find this path in the .swagger-mcp file in the solution root with the format SWAGGER_FILEPATH=path/to/file.json."
 	responseFormatDescription := "Output format: 'markdown' for human-readable or 'json' for machine-readable (default: markdown)"
@@ -265,7 +263,6 @@ Error Handling:
 		return mcpgo.NewToolResultText(string(data)), nil
 	})
 
-	_ = logger
 }
 
 // formatEndpointList renders an endpointListResult as either Markdown or JSON,

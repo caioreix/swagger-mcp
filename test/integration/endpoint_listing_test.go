@@ -16,7 +16,7 @@ func TestBinaryUsesCLIURLForEndpointListing(t *testing.T) {
 			"clientInfo":      map[string]any{"name": "endpoint-test", "version": "1.0.0"},
 		})),
 		string(testutil.JSONRPCRequest(t, 2, "tools/call", map[string]any{
-			"name":      "listEndpoints",
+			"name":      "swagger_list_endpoints",
 			"arguments": map[string]any{},
 		})),
 	}, map[string]string{"LOG_LEVEL": "info"})

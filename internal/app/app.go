@@ -54,7 +54,7 @@ func Run(cfg config.Config, stdin io.Reader, stdout io.Writer, _ io.Writer) int 
 	case "sse":
 		return serveSSE(adapter, logger, cfg.Port, cfg.SseHeaders)
 	case "streamable-http":
-		return serveStreamableHTTP(mcpServer, adapter, logger, cfg.Port, cfg.HTTPHeaders)
+		return serveStreamableHTTP(mcpServer, logger, cfg.Port, cfg.HTTPHeaders)
 	default:
 		return serveStdio(adapter, logger, stdin, stdout)
 	}

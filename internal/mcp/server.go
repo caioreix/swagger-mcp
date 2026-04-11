@@ -61,7 +61,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*mcpgoserver.MCPServer, 
 		mcpgoserver.WithInstructions(instructions),
 	)
 
-	registerStaticTools(s, resolver, filter, cfg, componentLogger)
+	registerStaticTools(s, resolver, filter, cfg)
 	registerProxyTools(s, proxyTools, cfg)
 	registerPrompts(s)
 

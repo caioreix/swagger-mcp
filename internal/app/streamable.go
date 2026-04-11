@@ -10,7 +10,6 @@ import (
 
 func serveStreamableHTTP(
 	mcpServer *mcpgoserver.MCPServer,
-	_ jsonHandler,
 	logger *slog.Logger,
 	port string,
 	httpHeaders string,

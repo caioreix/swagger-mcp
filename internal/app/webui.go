@@ -78,7 +78,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 <script>
 let tools = [];
 let currentTool = null;
-let history = [];
 
 async function rpc(method, params) {
   const resp = await fetch('/api/rpc', {
@@ -190,7 +189,6 @@ async function executeTool() {
     respEl.className = result.isError ? 'response-area error' : 'response-area success';
     status.className = 'status';
     status.textContent = result.isError ? 'Error' : 'Success';
-    history.push({tool: tool.name, args, result: text, time: new Date().toISOString()});
   } catch(e) {
     respEl.textContent = 'Error: ' + e.message;
     respEl.className = 'response-area error';
