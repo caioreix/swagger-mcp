@@ -28,6 +28,6 @@ func BuildRequestBody(operation map[string]any, arguments map[string]any) any {
 }
 
 // ProxyToolName is a test export of proxyToolName.
-func ProxyToolName(ep openapi.Endpoint, apiName string) string {
-	return proxyToolName(ep, apiName)
+func ProxyToolName(ep openapi.Endpoint, apiName, apiTitle string) string {
+	return proxyToolName(ep, apiName, apiTitle)
 }

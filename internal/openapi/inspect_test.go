@@ -266,3 +266,33 @@ func TestExtractSecuritySchemesEmpty(t *testing.T) {
 		t.Fatalf("expected 0 schemes, got %d", len(schemes))
 	}
 }
+
+func TestExtractAPITitle(t *testing.T) {
+t.Run("returns title from info", func(t *testing.T) {
+doc := map[string]any{
+"info": map[string]any{"title": "Petstore API"},
+}
+got := openapi.ExtractAPITitle(doc)
+if got != "Petstore API" {
+t.Errorf("got %q, want %q", got, "Petstore API")
+}
+})
+t.Run("returns empty when no info", func(t *testing.T) {
+doc := map[string]any{}
+if got := openapi.ExtractAPITitle(doc); got != "" {
+t.Errorf("expected empty, got %q", got)
+}
+})
+t.Run("returns empty when title absent", func(t *testing.T) {
+doc := map[string]any{"info": map[string]any{}}
+if got := openapi.ExtractAPITitle(doc); got != "" {
+t.Errorf("expected empty, got %q", got)
+}
+})
+t.Run("trims whitespace", func(t *testing.T) {
+doc := map[string]any{"info": map[string]any{"title": "  My API  "}}
+if got := openapi.ExtractAPITitle(doc); got != "My API" {
+t.Errorf("got %q, want %q", got, "My API")
+}
+})
+}

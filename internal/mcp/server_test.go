@@ -392,13 +392,13 @@ func TestProxyToolNameWithAPIPrefix(t *testing.T) {
 		apiName string
 		want    string
 	}{
-		{"", "swagger_get_pet_by_id"},
+		{"", "api_get_pet_by_id"},
 		{"petstore", "petstore_get_pet_by_id"},
 		{"my-api", "my_api_get_pet_by_id"},
 	}
 
 	for _, tc := range cases {
-		got := mcp.ProxyToolName(ep, tc.apiName)
+		got := mcp.ProxyToolName(ep, tc.apiName, "")
 		if got != tc.want {
 			t.Errorf("mcp.ProxyToolName(%q) = %q, want %q", tc.apiName, got, tc.want)
 		}
@@ -411,7 +411,7 @@ func TestProxyToolNameWithoutOperationID(t *testing.T) {
 		Method: "GET",
 	}
 
-	got := mcp.ProxyToolName(ep, "store")
+	got := mcp.ProxyToolName(ep, "store", "")
 	want := "store_get_pets_id"
 	if got != want {
 		t.Errorf("proxyToolName = %q, want %q", got, want)
@@ -431,13 +431,13 @@ func TestProxyToolsExposeTypedInputSchema(t *testing.T) {
 	var findPetsTool map[string]any
 	for _, rawTool := range tools {
 		tool := rawTool.(map[string]any)
-		if tool["name"] == "swagger_find_pets" {
+		if tool["name"] == "swagger_petstore_find_pets" {
 			findPetsTool = tool
 			break
 		}
 	}
 	if findPetsTool == nil {
-		t.Fatalf("expected swagger_find_pets tool in proxy tools list")
+		t.Fatalf("expected swagger_petstore_find_pets tool in proxy tools list")
 	}
 
 	inputSchema := findPetsTool["inputSchema"].(map[string]any)

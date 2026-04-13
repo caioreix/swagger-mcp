@@ -513,3 +513,13 @@ func parseSecurityRequirements(security []any) []SecurityRequirement { //nolint:
 	}
 	return reqs
 }
+
+// ExtractAPITitle returns the API title from the info object, or empty string if absent.
+func ExtractAPITitle(document map[string]any) string {
+info, ok := document["info"].(map[string]any)
+if !ok {
+return ""
+}
+title, _ := info["title"].(string)
+return strings.TrimSpace(title)
+}

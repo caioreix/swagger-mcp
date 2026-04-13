@@ -60,27 +60,33 @@ func registerProxyTools(s *mcpgoserver.MCPServer, tools []proxyTool, cfg config.
 
 // buildMCPGoTool converts a proxyTool's definition into a mcp-go Tool.
 func buildMCPGoTool(pt proxyTool) mcpgo.Tool {
+	title := openapi.StringValuePublic(pt.Operation["summary"])
+	if title == "" {
+		title = fmt.Sprintf("%s %s", strings.ToUpper(pt.Method), pt.Path)
+	}
+
 	schemaBytes, err := json.Marshal(pt.Definition.InputSchema)
 	if err != nil {
 		tool := mcpgo.NewTool(pt.Definition.Name, mcpgo.WithDescription(pt.Definition.Description))
-		tool.Annotations = inferProxyAnnotations(pt.Method)
+		tool.Annotations = inferProxyAnnotations(pt.Method, title)
 		return tool
 	}
 	tool := mcpgo.NewToolWithRawSchema(pt.Definition.Name, pt.Definition.Description, schemaBytes)
 	mcpgo.WithOutputSchema[proxyResponseResult]()(&tool)
-	tool.Annotations = inferProxyAnnotations(pt.Method)
+	tool.Annotations = inferProxyAnnotations(pt.Method, title)
 	return tool
 }
 
 // inferProxyAnnotations returns tool annotations inferred from the HTTP method.
 // GET/HEAD are read-only and idempotent; DELETE is destructive and idempotent;
 // PUT is idempotent but not read-only; POST/PATCH are neither.
-func inferProxyAnnotations(method string) mcpgo.ToolAnnotation {
+func inferProxyAnnotations(method, title string) mcpgo.ToolAnnotation {
 	m := strings.ToUpper(method)
 	readOnly := m == "GET" || m == "HEAD"
 	destructive := m == "DELETE"
 	idempotent := readOnly || m == "PUT" || m == "DELETE"
 	return mcpgo.ToolAnnotation{
+		Title:           title,
 		ReadOnlyHint:    new(readOnly),
 		DestructiveHint: new(destructive),
 		IdempotentHint:  new(idempotent),
@@ -117,6 +123,7 @@ func buildProxyTools(
 
 	endpoints = openapi.FilterEndpoints(endpoints, filter)
 	tools := make([]proxyTool, 0, len(endpoints))
+	apiTitle := openapi.ExtractAPITitle(document)
 
 	for _, ep := range endpoints {
 		operation, opErr := openapi.FindOperation(document, ep.Path, ep.Method)
@@ -125,9 +132,9 @@ func buildProxyTools(
 			continue
 		}
 
-		toolName := proxyToolName(ep, apiName)
-		description := proxyToolDescription(ep)
+		toolName := proxyToolName(ep, apiName, apiTitle)
 		inputSchema := proxyInputSchema(document, operation)
+		description := proxyToolDescription(ep, inputSchema)
 
 		tools = append(tools, proxyTool{
 			Definition: toolDefinition{
@@ -147,12 +154,15 @@ func buildProxyTools(
 	return tools, nil
 }
 
-func proxyToolName(ep openapi.Endpoint, apiName string) string {
+func proxyToolName(ep openapi.Endpoint, apiName, apiTitle string) string {
 	prefix := normalizedToolPrefix(apiName)
-	base := toolBaseName(ep)
 	if prefix == "" {
-		prefix = "swagger"
+		prefix = toSnakeCase(apiTitle)
 	}
+	if prefix == "" {
+		prefix = "api"
+	}
+	base := toolBaseName(ep)
 	return prefix + "_" + base
 }
 
@@ -171,11 +181,30 @@ func pathToolBaseName(method, endpointPath string) string {
 	path := strings.Trim(strings.ReplaceAll(endpointPath, "/", "_"), "_")
 	path = strings.ReplaceAll(path, "{", "")
 	path = strings.ReplaceAll(path, "}", "")
-	base := method
+	base := httpMethodToVerb(method)
 	if path != "" {
 		base += "_" + path
 	}
 	return toSnakeCase(base)
+}
+
+func httpMethodToVerb(method string) string {
+	switch strings.ToUpper(method) {
+	case "GET":
+		return "get"
+	case "POST":
+		return "create"
+	case "PUT", "PATCH":
+		return "update"
+	case "DELETE":
+		return "delete"
+	case "HEAD":
+		return "head"
+	case "OPTIONS":
+		return "options"
+	default:
+		return strings.ToLower(method)
+	}
 }
 
 func toSnakeCase(value string) string {
@@ -218,24 +247,70 @@ func toSnakeCase(value string) string {
 	return strings.Trim(b.String(), "_")
 }
 
-func proxyToolDescription(ep openapi.Endpoint) string {
+func proxyToolDescription(ep openapi.Endpoint, inputSchema map[string]any) string {
 	var b strings.Builder
 
-	if ep.Summary != "" {
-		b.WriteString(ep.Summary)
+	summary := ep.Summary
+	if summary == "" {
+		summary = fmt.Sprintf("%s %s", strings.ToUpper(ep.Method), ep.Path)
 	}
+	b.WriteString(summary)
+	b.WriteString("\n\n")
+	fmt.Fprintf(&b, "%s %s\n", strings.ToUpper(ep.Method), ep.Path)
+
 	if ep.Description != "" {
-		if b.Len() > 0 {
-			b.WriteString(" — ")
-		}
+		b.WriteString("\n")
 		b.WriteString(ep.Description)
-	}
-	if b.Len() == 0 {
-		fmt.Fprintf(&b, "%s %s", ep.Method, ep.Path)
+		b.WriteString("\n")
 	}
 
-	// Anti-hallucination instructions
-	b.WriteString("\n\nIMPORTANT: Use this tool ONLY when the request exactly matches the description above. ")
+	if props, ok := inputSchema["properties"].(map[string]any); ok && len(props) > 0 {
+		requiredSet := map[string]bool{}
+		if req, ok := inputSchema["required"].([]string); ok {
+			for _, r := range req {
+				requiredSet[r] = true
+			}
+		}
+
+		required := make([]string, 0, len(props))
+		optional := make([]string, 0, len(props))
+		for name := range props {
+			if requiredSet[name] {
+				required = append(required, name)
+			} else {
+				optional = append(optional, name)
+			}
+		}
+		slices.Sort(required)
+		slices.Sort(optional)
+
+		b.WriteString("\nArgs:\n")
+		for _, name := range append(required, optional...) {
+			prop, _ := props[name].(map[string]any)
+			typ, _ := prop["type"].(string)
+			if typ == "" {
+				typ = "string"
+			}
+			req := "optional"
+			if requiredSet[name] {
+				req = "required"
+			}
+			desc, _ := prop["description"].(string)
+			if desc != "" {
+				fmt.Fprintf(&b, "  - %s (%s, %s): %s\n", name, typ, req, desc)
+			} else {
+				fmt.Fprintf(&b, "  - %s (%s, %s)\n", name, typ, req)
+			}
+		}
+	}
+
+	b.WriteString("\nReturns: JSON response with status_code, content_type, and body from the API.\n")
+	b.WriteString("\nError Handling:\n")
+	b.WriteString("  - Returns HTTP error if the API responds with 4xx or 5xx status\n")
+	b.WriteString("  - Returns error if required parameters are missing\n")
+	b.WriteString("  - Returns error if the target endpoint is unreachable\n")
+
+	b.WriteString("\nIMPORTANT: Use this tool ONLY when the request exactly matches the description above. ")
 	b.WriteString("If you don't have required parameters, always ask the user. ")
 	b.WriteString("Do NOT fill any parameter on your own or keep it empty. ")
 	b.WriteString("Do NOT maintain records in memory — always fetch fresh data from the API.")
