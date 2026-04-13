@@ -31,6 +31,23 @@ type endpointListResult struct {
 	NextOffset *int               `json:"next_offset,omitempty"`
 }
 
+type definitionDownloadResult struct {
+	FilePath      string `json:"file_path"`
+	ConfigFile    string `json:"config_file"`
+	ConfigSnippet string `json:"config_snippet"`
+}
+
+type modelListResult struct {
+	Path   string          `json:"path"`
+	Method string          `json:"method"`
+	Count  int             `json:"count"`
+	Models []openapi.Model `json:"models"`
+}
+
+type versionToolResult struct {
+	Version string `json:"version"`
+}
+
 func registerStaticTools( //nolint:gocognit,funlen
 	s *mcpgoserver.MCPServer,
 	resolver openapi.SourceResolver,
@@ -64,6 +81,7 @@ Error Handling:
 			mcpgo.Required(),
 			mcpgo.Description("Directory where the definition will be saved (should be the solution root folder)"),
 		),
+		mcpgo.WithOutputSchema[definitionDownloadResult](),
 		mcpgo.WithToolAnnotation(mcpgo.ToolAnnotation{
 			Title:           "Download Swagger Definition",
 			ReadOnlyHint:    new(false),
@@ -89,9 +107,20 @@ Error Handling:
 		}
 		savedDefinition, err := resolver.DownloadDefinition(urlVal, saveLocation)
 		if err != nil {
-			return mcpgo.NewToolResultError(fmt.Sprintf("error retrieving swagger definition: %v", err)), nil
+			return mcpgo.NewToolResultError(
+				fmt.Sprintf(
+					"failed to download the Swagger/OpenAPI definition: %v. Verify the URL is reachable and points to a valid specification document.",
+					err,
+				),
+			), nil
 		}
-		return mcpgo.NewToolResultText(
+		result := definitionDownloadResult{
+			FilePath:      savedDefinition.FilePath,
+			ConfigFile:    ".swagger-mcp",
+			ConfigSnippet: fmt.Sprintf("SWAGGER_FILEPATH=%s", savedDefinition.FilePath),
+		}
+		return mcpgo.NewToolResultStructured(
+			result,
 			fmt.Sprintf(
 				"Successfully downloaded and saved Swagger definition.\n\nIMPORTANT: You must now create a file named '.swagger-mcp' in the solution root with the following content:\n\nSWAGGER_FILEPATH=%s\n\nThis file is required by all other Swagger-related tools.",
 				savedDefinition.FilePath,
@@ -130,6 +159,7 @@ Error Handling:
 			mcpgo.Description(responseFormatDescription),
 			mcpgo.Enum("markdown", "json"),
 		),
+		mcpgo.WithOutputSchema[endpointListResult](),
 		mcpgo.WithToolAnnotation(mcpgo.ToolAnnotation{
 			Title:           "List API Endpoints",
 			ReadOnlyHint:    new(true),
@@ -140,11 +170,11 @@ Error Handling:
 	), func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 		document, err := resolver.Load(req.GetString("swaggerFilePath", ""))
 		if err != nil {
-			return mcpgo.NewToolResultError(fmt.Sprintf("error retrieving endpoints: %v", err)), nil
+			return mcpgo.NewToolResultError(swaggerSourceError("list endpoints", err)), nil
 		}
 		endpoints, err := openapi.ListEndpoints(document)
 		if err != nil {
-			return mcpgo.NewToolResultError(fmt.Sprintf("error retrieving endpoints: %v", err)), nil
+			return mcpgo.NewToolResultError(fmt.Sprintf("failed to list endpoints: %v", err)), nil
 		}
 		endpoints = openapi.FilterEndpoints(endpoints, filter)
 
@@ -173,8 +203,11 @@ Error Handling:
 			result.NextOffset = &next
 		}
 
-		text := formatEndpointList(result, format)
-		return mcpgo.NewToolResultText(text), nil
+		text, err := formatEndpointList(result, format)
+		if err != nil {
+			return mcpgo.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+		}
+		return mcpgo.NewToolResultStructured(result, text), nil
 	})
 
 	// swagger_list_endpoint_models
@@ -210,6 +243,7 @@ Error Handling:
 			mcpgo.Description(responseFormatDescription),
 			mcpgo.Enum("markdown", "json"),
 		),
+		mcpgo.WithOutputSchema[modelListResult](),
 		mcpgo.WithToolAnnotation(mcpgo.ToolAnnotation{
 			Title:           "List Endpoint Models",
 			ReadOnlyHint:    new(true),
@@ -220,7 +254,7 @@ Error Handling:
 	), func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 		document, err := resolver.Load(req.GetString("swaggerFilePath", ""))
 		if err != nil {
-			return mcpgo.NewToolResultError(fmt.Sprintf("error retrieving endpoint models: %v", err)), nil
+			return mcpgo.NewToolResultError(swaggerSourceError("list endpoint models", err)), nil
 		}
 		endpointPath, err := req.RequireString("path")
 		if err != nil {
@@ -232,11 +266,20 @@ Error Handling:
 		}
 		models, err := openapi.ListEndpointModels(document, endpointPath, method)
 		if err != nil {
-			return mcpgo.NewToolResultError(fmt.Sprintf("error retrieving endpoint models: %v", err)), nil
+			return mcpgo.NewToolResultError(fmt.Sprintf("failed to list endpoint models: %v", err)), nil
 		}
 		format := req.GetString("response_format", "markdown")
-		text := formatModelList(models, endpointPath, method, format)
-		return mcpgo.NewToolResultText(text), nil
+		result := modelListResult{
+			Path:   endpointPath,
+			Method: strings.ToUpper(method),
+			Count:  len(models),
+			Models: models,
+		}
+		text, err := formatModelList(result, format)
+		if err != nil {
+			return mcpgo.NewToolResultError(fmt.Sprintf("failed to format response: %v", err)), nil
+		}
+		return mcpgo.NewToolResultStructured(result, text), nil
 	})
 
 	// swagger_get_version
@@ -244,10 +287,19 @@ Error Handling:
 		"swagger_get_version",
 		mcpgo.WithDescription(`Returns the current version number of the Swagger MCP Server.
 
-Returns: JSON object with a "version" field containing the semver string
+Args:
+  - response_format (string, optional): Output format — 'markdown' or 'json' (default: json)
+
+Returns: Version metadata with a "version" field containing the semver string
 
 Error Handling:
   - Returns error if the version cannot be serialized (unexpected)`),
+		mcpgo.WithString(
+			"response_format",
+			mcpgo.Description("Output format: 'markdown' for human-readable or 'json' for machine-readable (default: json)"),
+			mcpgo.Enum("markdown", "json"),
+		),
+		mcpgo.WithOutputSchema[versionToolResult](),
 		mcpgo.WithToolAnnotation(mcpgo.ToolAnnotation{
 			Title:           "Get Server Version",
 			ReadOnlyHint:    new(true),
@@ -255,22 +307,27 @@ Error Handling:
 			IdempotentHint:  new(true),
 			OpenWorldHint:   new(false),
 		}),
-	), func(_ context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-		data, err := json.MarshalIndent(map[string]string{"version": config.Version}, "", "  ")
+	), func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		result := versionToolResult{Version: config.Version}
+		format := req.GetString("response_format", "json")
+		text, err := formatStructuredText(result, format, fmt.Sprintf("Version: %s", config.Version))
 		if err != nil {
-			return mcpgo.NewToolResultError(fmt.Sprintf("error: %v", err)), nil
+			return mcpgo.NewToolResultError(fmt.Sprintf("failed to format version response: %v", err)), nil
 		}
-		return mcpgo.NewToolResultText(string(data)), nil
+		return mcpgo.NewToolResultStructured(result, text), nil
 	})
 
 }
 
 // formatEndpointList renders an endpointListResult as either Markdown or JSON,
 // truncating output that exceeds characterLimit.
-func formatEndpointList(result endpointListResult, format string) string {
+func formatEndpointList(result endpointListResult, format string) (string, error) {
 	var text string
 	if format == "json" {
-		b, _ := json.MarshalIndent(result, "", "  ")
+		b, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return "", err
+		}
 		text = string(b)
 	} else {
 		text = formatEndpointListMarkdown(result)
@@ -279,7 +336,7 @@ func formatEndpointList(result endpointListResult, format string) string {
 	if len(text) > characterLimit {
 		text = text[:characterLimit] + "\n\n[Response truncated. Use 'offset' or 'limit' parameters to narrow results.]"
 	}
-	return text
+	return text, nil
 }
 
 func formatEndpointListMarkdown(result endpointListResult) string {
@@ -313,29 +370,32 @@ func formatEndpointListMarkdown(result endpointListResult) string {
 
 // formatModelList renders a slice of openapi.Model as either Markdown or JSON,
 // truncating output that exceeds characterLimit.
-func formatModelList(models []openapi.Model, endpointPath, method, format string) string {
+func formatModelList(result modelListResult, format string) (string, error) {
 	var text string
 	if format == "json" {
-		b, _ := json.MarshalIndent(models, "", "  ")
+		b, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return "", err
+		}
 		text = string(b)
 	} else {
-		text = formatModelListMarkdown(models, endpointPath, method)
+		text = formatModelListMarkdown(result)
 	}
 
 	if len(text) > characterLimit {
 		text = text[:characterLimit] + "\n\n[Response truncated. Use a more specific endpoint path or filter.]"
 	}
-	return text
+	return text, nil
 }
 
-func formatModelListMarkdown(models []openapi.Model, endpointPath, method string) string {
+func formatModelListMarkdown(result modelListResult) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "# Models for %s %s\n\n", strings.ToUpper(method), endpointPath)
-	if len(models) == 0 {
+	fmt.Fprintf(&sb, "# Models for %s %s\n\n", result.Method, result.Path)
+	if len(result.Models) == 0 {
 		sb.WriteString("No models found for this endpoint.\n")
 		return sb.String()
 	}
-	for _, m := range models {
+	for _, m := range result.Models {
 		fmt.Fprintf(&sb, "## %s\n", m.Name)
 		if m.Schema != nil {
 			schemaBytes, err := json.MarshalIndent(m.Schema, "", "  ")
@@ -348,4 +408,23 @@ func formatModelListMarkdown(models []openapi.Model, endpointPath, method string
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+func swaggerSourceError(action string, err error) string {
+	return fmt.Sprintf(
+		"failed to %s: %v. Provide --swagger-url, pass swaggerFilePath, or create a .swagger-mcp file with SWAGGER_FILEPATH=<path>.",
+		action,
+		err,
+	)
+}
+
+func formatStructuredText(data any, format, markdown string) (string, error) {
+	if format != "json" {
+		return markdown, nil
+	}
+	encoded, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }

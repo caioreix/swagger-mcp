@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	configpkg "github.com/caioreix/swagger-mcp/internal/config"
@@ -181,5 +182,113 @@ func TestLoadProxyModeFlags(t *testing.T) {
 	}
 	if config.Filter.ExcludeMethods != "DELETE" {
 		t.Fatalf("expected ExcludeMethods, got %q", config.Filter.ExcludeMethods)
+	}
+}
+
+func TestValidate_ProxyModeWithoutSwaggerURL(t *testing.T) {
+	cfg := configpkg.Config{
+		ProxyMode: true,
+		SwaggerURL: "",
+		Transport: "stdio",
+		Port:      "8080",
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for proxy mode without swagger URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "proxy mode requires a swagger URL") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidate_ProxyModeWithSwaggerURL(t *testing.T) {
+	cfg := configpkg.Config{
+		ProxyMode:  true,
+		SwaggerURL: "https://example.com/swagger.json",
+		Transport:  "stdio",
+		Port:       "8080",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidate_ProxyModeWithMultiAPIConfig(t *testing.T) {
+	cfg := configpkg.Config{
+		ProxyMode:  true,
+		SwaggerURL: "",
+		Transport:  "stdio",
+		Port:       "8080",
+		APIs: []configpkg.APIConfig{
+			{Name: "petstore", SwaggerURL: "https://petstore.swagger.io/v2/swagger.json"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error when APIs are configured, got: %v", err)
+	}
+}
+
+func TestValidate_InvalidPort(t *testing.T) {
+	cases := []struct {
+		name      string
+		transport string
+		port      string
+		wantErr   bool
+	}{
+		{"sse invalid port", "sse", "abc", true},
+		{"streamable-http zero port", "streamable-http", "0", true},
+		{"streamable-http negative port", "streamable-http", "-1", true},
+		{"streamable-http too large port", "streamable-http", "99999", true},
+		{"sse valid port", "sse", "8080", false},
+		{"streamable-http valid port", "streamable-http", "9090", false},
+		{"stdio ignores invalid port", "stdio", "abc", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := configpkg.Config{Transport: tc.transport, Port: tc.port}
+			err := cfg.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), "invalid port") {
+				t.Errorf("unexpected error message: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidate_DuplicateAPINames(t *testing.T) {
+	cfg := configpkg.Config{
+		Transport: "stdio",
+		Port:      "8080",
+		APIs: []configpkg.APIConfig{
+			{Name: "petstore"},
+			{Name: "github"},
+			{Name: "petstore"},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for duplicate API name, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate API name") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidate_NoDuplicateAPINames(t *testing.T) {
+	cfg := configpkg.Config{
+		Transport: "stdio",
+		Port:      "8080",
+		APIs: []configpkg.APIConfig{
+			{Name: "petstore"},
+			{Name: "github"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
 }

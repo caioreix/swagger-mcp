@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -62,6 +63,31 @@ type Config struct {
 	// APIs holds multiple named API profiles loaded from the swagger-mcp.yaml config file.
 	// When populated, each API generates its own set of proxy tools.
 	APIs []APIConfig
+}
+
+// Validate checks the configuration for common mistakes before the server starts.
+// It returns a descriptive error if the configuration is invalid.
+func (c Config) Validate() error {
+	if c.ProxyMode && c.SwaggerURL == "" && len(c.APIs) == 0 {
+		return fmt.Errorf("proxy mode requires a swagger URL (use --swagger-url or configure .swagger-mcp)")
+	}
+
+	if c.Transport == "sse" || c.Transport == "streamable-http" {
+		port, err := strconv.Atoi(c.Port)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("invalid port %q: must be a number between 1 and 65535", c.Port)
+		}
+	}
+
+	seen := make(map[string]struct{}, len(c.APIs))
+	for _, api := range c.APIs {
+		if _, dup := seen[api.Name]; dup {
+			return fmt.Errorf("duplicate API name %q in multi-API config", api.Name)
+		}
+		seen[api.Name] = struct{}{}
+	}
+
+	return nil
 }
 
 func load(args []string) (Config, error) {

@@ -95,10 +95,10 @@ async function init() {
     const toolsResult = await rpc('tools/list', {});
     tools = toolsResult.tools || [];
     renderToolList();
-    const versionResult = await rpc('tools/call', {name: 'version', arguments: {}});
-    const content = versionResult.content || [];
-    if (content.length > 0) {
-      try { document.getElementById('version').textContent = 'v' + JSON.parse(content[0].text).version; } catch(e) {}
+    const versionResult = await rpc('tools/call', {name: 'swagger_get_version', arguments: {}});
+    const structured = versionResult.structuredContent || {};
+    if (structured.version) {
+      document.getElementById('version').textContent = 'v' + structured.version;
     }
   } catch(e) { console.error('Init error:', e); }
 }

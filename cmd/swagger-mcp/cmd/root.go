@@ -56,11 +56,11 @@ AI assistants connected via MCP can:
 
 Transport modes:
   stdio           (default) communicates over stdin/stdout — ideal for Cursor, Claude Desktop
-  sse             HTTP server with Server-Sent Events — good for web-based clients
-  streamable-http HTTP server following the MCP StreamableHTTP spec
+  streamable-http HTTP server following the MCP StreamableHTTP spec — recommended for remote/web clients
+  sse             legacy HTTP transport with Server-Sent Events
 
 All flags can be set via environment variables using the SWAGGER_MCP_ prefix
-(e.g. SWAGGER_MCP_TRANSPORT=sse, SWAGGER_MCP_PORT=9090). Flags always take
+(e.g. SWAGGER_MCP_TRANSPORT=streamable-http, SWAGGER_MCP_PORT=9090). Flags always take
 precedence over environment variables.
 
 Authentication is configured via environment variables:

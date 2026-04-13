@@ -39,9 +39,9 @@ func (o *serveOptions) addFlags(cmd *cobra.Command) {
 	f.StringVar(&o.swaggerURL, "swagger-url", "",
 		"URL of the Swagger/OpenAPI definition to load and cache locally (env: SWAGGER_MCP_SWAGGER_URL)")
 	f.StringVar(&o.transport, "transport", "",
-		`Transport protocol: "stdio" (default), "sse", or "streamable-http" (env: SWAGGER_MCP_TRANSPORT)`)
+		`Transport protocol: "stdio" (default), "streamable-http", or legacy "sse" (env: SWAGGER_MCP_TRANSPORT)`)
 	f.StringVar(&o.port, "port", "",
-		"HTTP port used by the sse and streamable-http transports (default: 8080, env: SWAGGER_MCP_PORT)")
+		"HTTP port used by the streamable-http and sse transports, and by the stdio web UI when --ui is enabled (default: 8080, env: SWAGGER_MCP_PORT)")
 	f.StringVar(&o.logLevel, "log-level", "",
 		`Log verbosity level: "debug", "info", "warn", or "error" (default: info, env: LOG_LEVEL)`)
 	f.BoolVar(&o.enableUI, "ui", false,
@@ -76,7 +76,7 @@ func (o *serveOptions) addFlags(cmd *cobra.Command) {
 		&o.sseHeaders,
 		"sse-headers",
 		"",
-		"Request headers forwarded from SSE clients to proxy API calls — comma-separated (env: SWAGGER_MCP_SSE_HEADERS)",
+		"Request headers forwarded from legacy SSE clients to proxy API calls — comma-separated (env: SWAGGER_MCP_SSE_HEADERS)",
 	)
 	f.StringVar(
 		&o.httpHeaders,
@@ -152,6 +152,10 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 			return config.Config{}, apisErr
 		}
 		cfg.APIs = apis
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return config.Config{}, err
 	}
 
 	return cfg, nil

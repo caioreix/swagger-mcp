@@ -50,7 +50,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*mcpgoserver.MCPServer, 
 		proxyTools = append(proxyTools, multiTools...)
 	}
 
-	instructions := "Use swagger_get_definition to download a Swagger/OpenAPI document, then call the Swagger tools or the add-endpoint prompt to inspect the API and generate scaffolding."
+	instructions := "Use swagger_get_definition to download a Swagger/OpenAPI document, then call the Swagger tools or the swagger_add_endpoint prompt (legacy alias: add-endpoint) to inspect the API and integrate the endpoint into your project."
 	if cfg.ProxyMode || len(cfg.APIs) > 0 {
 		instructions = "This server is running in proxy mode. API endpoints are available as tools — call them directly to interact with the API. " + instructions
 	}

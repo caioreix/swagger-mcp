@@ -2,52 +2,52 @@
   <!-- Questions are based on the Petstore API loaded from testdata/petstore.json -->
 
   <qa_pair>
-    <question>How many total API operations are defined in the Petstore API?</question>
-    <answer>4</answer>
-  </qa_pair>
-
-  <qa_pair>
-    <question>What is the operationId of the operation that lists all pets (GET /pets)?</question>
+    <question>One read-only operation returns a top-level array and accepts an optional CSV query filter named `tags`. What is its operationId?</question>
     <answer>findPets</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>What is the name of the request body model used when creating a new pet (POST /pets)?</question>
-    <answer>NewPet</answer>
+    <question>A single schema is reused as both the success response body for POST /pets and the array item type for the 200 response of GET /pets. What is that schema name?</question>
+    <answer>Pet</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>How many distinct models are referenced by the GET /pets endpoint (including request, response, and nested models)?</question>
-    <answer>3</answer>
+    <question>Among the schemas reachable from the create-pet workflow, which referenced schema is optional in both parent pet models and defines no required fields of its own?</question>
+    <answer>Category</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>Which property of the Pet model has enum values?</question>
-    <answer>status</answer>
+    <question>Considering only operations whose only parameter is an int64 path field named `id`, which operationId has a success response without any body schema?</question>
+    <answer>deletePet</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>What is the name of the property in the Pet model that refers to the nested Category model?</question>
-    <answer>category</answer>
-  </qa_pair>
-
-  <qa_pair>
-    <question>What is the only required field in the NewPet model?</question>
+    <question>What property is the only required field in the create request model and is also required in the full resource model returned after creation?</question>
     <answer>name</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>What is the name of the integer-typed field in the Error model?</question>
-    <answer>code</answer>
+    <question>Across all endpoint-specific model graphs in this API, how many distinct schema names are referenced anywhere?</question>
+    <answer>4</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>What is the path of the operation with operationId "deletePet"?</question>
-    <answer>/pets/{id}</answer>
+    <question>What is the only enum-backed field name that appears in both the request pet schema and the returned pet schema?</question>
+    <answer>status</answer>
   </qa_pair>
 
   <qa_pair>
-    <question>How many distinct models are referenced by the DELETE /pets/{id} endpoint?</question>
-    <answer>1</answer>
+    <question>Which endpoint exposes a model graph that includes NewPet, its shared nested category schema, the returned resource schema, and the shared error schema? Respond with `METHOD path`.</question>
+    <answer>POST /pets</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>When comparing the collection-read and single-item-read operations, what optional query parameter exists only on the collection read to cap the number of returned records?</question>
+    <answer>limit</answer>
+  </qa_pair>
+
+  <qa_pair>
+    <question>Which HTTP method on `/pets/{id}` references exactly one distinct schema across all of its parameters and responses because it can only fail with the shared error model? Respond with the method in uppercase.</question>
+    <answer>DELETE</answer>
   </qa_pair>
 </evaluation>

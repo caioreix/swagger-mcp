@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/caioreix/swagger-mcp/internal/config"
 	"github.com/caioreix/swagger-mcp/internal/openapi"
@@ -20,7 +22,11 @@ import (
 
 const (
 	paramTypeString    = "string"
+	paramTypeBoolean   = "boolean"
 	paramTypeArray     = "array"
+	paramTypeInteger   = "integer"
+	paramTypeNumber    = "number"
+	paramTypeObject    = "object"
 	paramLocationPath  = "path"
 	paramLocationQuery = "query"
 
@@ -33,6 +39,12 @@ type toolDefinition struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
 	InputSchema map[string]any `json:"inputSchema"`
+}
+
+type proxyResponseResult struct {
+	StatusCode  int    `json:"status_code"`
+	ContentType string `json:"content_type,omitempty"`
+	Body        any    `json:"body,omitempty"`
 }
 
 // registerProxyTools registers dynamic proxy tools on the MCPServer.
@@ -48,30 +60,16 @@ func registerProxyTools(s *mcpgoserver.MCPServer, tools []proxyTool, cfg config.
 
 // buildMCPGoTool converts a proxyTool's definition into a mcp-go Tool.
 func buildMCPGoTool(pt proxyTool) mcpgo.Tool {
-	opts := []mcpgo.ToolOption{
-		mcpgo.WithDescription(pt.Definition.Description),
-		mcpgo.WithToolAnnotation(inferProxyAnnotations(pt.Method)),
+	schemaBytes, err := json.Marshal(pt.Definition.InputSchema)
+	if err != nil {
+		tool := mcpgo.NewTool(pt.Definition.Name, mcpgo.WithDescription(pt.Definition.Description))
+		tool.Annotations = inferProxyAnnotations(pt.Method)
+		return tool
 	}
-
-	if props, ok := pt.Definition.InputSchema["properties"].(map[string]any); ok {
-		required := map[string]bool{}
-		if reqList, reqOk := pt.Definition.InputSchema["required"].([]string); reqOk {
-			for _, r := range reqList {
-				required[r] = true
-			}
-		}
-		for name, rawProp := range props {
-			prop, _ := rawProp.(map[string]any)
-			desc, _ := prop["description"].(string)
-			propOpts := []mcpgo.PropertyOption{mcpgo.Description(desc)}
-			if required[name] {
-				propOpts = append(propOpts, mcpgo.Required())
-			}
-			opts = append(opts, mcpgo.WithString(name, propOpts...))
-		}
-	}
-
-	return mcpgo.NewTool(pt.Definition.Name, opts...)
+	tool := mcpgo.NewToolWithRawSchema(pt.Definition.Name, pt.Definition.Description, schemaBytes)
+	mcpgo.WithOutputSchema[proxyResponseResult]()(&tool)
+	tool.Annotations = inferProxyAnnotations(pt.Method)
+	return tool
 }
 
 // inferProxyAnnotations returns tool annotations inferred from the HTTP method.
@@ -123,6 +121,7 @@ func buildProxyTools(
 	for _, ep := range endpoints {
 		operation, opErr := openapi.FindOperation(document, ep.Path, ep.Method)
 		if opErr != nil {
+			slog.Warn("skipping endpoint: operation not found", "path", ep.Path, "method", ep.Method)
 			continue
 		}
 
@@ -149,22 +148,74 @@ func buildProxyTools(
 }
 
 func proxyToolName(ep openapi.Endpoint, apiName string) string {
-	var base string
+	prefix := normalizedToolPrefix(apiName)
+	base := toolBaseName(ep)
+	if prefix == "" {
+		prefix = "swagger"
+	}
+	return prefix + "_" + base
+}
+
+func normalizedToolPrefix(apiName string) string {
+	return toSnakeCase(apiName)
+}
+
+func toolBaseName(ep openapi.Endpoint) string {
 	if ep.OperationID != "" {
-		name := strings.ReplaceAll(ep.OperationID, "_", "-")
-		name = strings.ReplaceAll(name, " ", "-")
-		base = strings.ToLower(name)
-	} else {
-		path := strings.ReplaceAll(ep.Path, "/", "-")
-		path = strings.ReplaceAll(path, "{", "")
-		path = strings.ReplaceAll(path, "}", "")
-		path = strings.Trim(path, "-")
-		base = strings.ToLower(ep.Method) + "-" + path
+		return toSnakeCase(ep.OperationID)
 	}
-	if apiName != "" {
-		return apiName + "_" + base
+	return pathToolBaseName(ep.Method, ep.Path)
+}
+
+func pathToolBaseName(method, endpointPath string) string {
+	path := strings.Trim(strings.ReplaceAll(endpointPath, "/", "_"), "_")
+	path = strings.ReplaceAll(path, "{", "")
+	path = strings.ReplaceAll(path, "}", "")
+	base := method
+	if path != "" {
+		base += "_" + path
 	}
-	return base
+	return toSnakeCase(base)
+}
+
+func toSnakeCase(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	runes := []rune(value)
+	var b strings.Builder
+	lastUnderscore := false
+
+	for i, r := range runes {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			if b.Len() > 0 && !lastUnderscore {
+				b.WriteByte('_')
+				lastUnderscore = true
+			}
+			continue
+		}
+
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				prev := runes[i-1]
+				nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+				if (unicode.IsLower(prev) || unicode.IsDigit(prev) || (unicode.IsUpper(prev) && nextLower)) &&
+					b.Len() > 0 && !lastUnderscore {
+					b.WriteByte('_')
+				}
+			}
+			b.WriteRune(unicode.ToLower(r))
+			lastUnderscore = false
+			continue
+		}
+
+		b.WriteRune(unicode.ToLower(r))
+		lastUnderscore = false
+	}
+
+	return strings.Trim(b.String(), "_")
 }
 
 func proxyToolDescription(ep openapi.Endpoint) string {
@@ -208,7 +259,7 @@ func proxyInputSchema(document map[string]any, operation map[string]any) map[str
 				processSwagger2BodyParam(document, param, name, properties, &required)
 				continue
 			}
-			processRegularParam(param, name, in, properties, &required)
+			processRegularParam(document, param, name, in, properties, &required)
 		}
 	}
 
@@ -241,91 +292,37 @@ func processSwagger2BodyParam(
 		addSchemaProperties(document, resolved, properties, required)
 		return
 	}
-	paramType := openapi.StringValuePublic(param["type"])
 	desc := openapi.StringValuePublic(param["description"])
-	if paramType == "" {
-		paramType = openapi.StringValuePublic(resolved["type"])
-	}
-	if paramType == "" {
-		paramType = paramTypeString
-	}
 	if desc == "" {
 		desc = "Request body"
 	}
-	propSchema := map[string]any{
-		"type":        paramType,
-		"description": desc,
-	}
-	if paramType == paramTypeArray {
-		propSchema["items"] = extractResolvedArrayItems(resolved)
-	}
-	properties[name] = propSchema
+	properties[name] = normalizeSchema(document, resolved, desc)
 	if isRequired, _ := param["required"].(bool); isRequired {
-		*required = append(*required, name)
+		appendRequiredUnique(required, name)
 	}
-}
-
-func extractResolvedArrayItems(resolved map[string]any) map[string]any {
-	items := map[string]any{"type": paramTypeString}
-	if rawItems, itemsOk := resolved["items"].(map[string]any); itemsOk {
-		if itemType := openapi.StringValuePublic(rawItems["type"]); itemType != "" {
-			items = map[string]any{"type": itemType}
-		}
-	}
-	return items
 }
 
 func processRegularParam(
+	document map[string]any,
 	param map[string]any,
 	name, in string,
 	properties map[string]any,
 	required *[]string,
 ) {
-	paramType := openapi.StringValuePublic(param["type"])
 	desc := openapi.StringValuePublic(param["description"])
-	if schema, paramSchemaOk := param["schema"].(map[string]any); paramSchemaOk {
-		if paramType == "" {
-			paramType = openapi.StringValuePublic(schema["type"])
-		}
-		if desc == "" {
-			desc = openapi.StringValuePublic(schema["description"])
-		}
-	}
-	if paramType == "" {
-		paramType = paramTypeString
-	}
 	if desc == "" {
 		desc = fmt.Sprintf("%s parameter: %s", in, name)
 	}
-	propSchema := map[string]any{
-		"type":        paramType,
-		"description": desc,
+	schemaObj, hasSchema := param["schema"].(map[string]any)
+	if hasSchema {
+		properties[name] = normalizeSchema(document, schemaObj, desc)
+	} else {
+		properties[name] = normalizeSchema(document, param, desc)
 	}
-	if paramType == paramTypeArray {
-		propSchema["items"] = extractParamArrayItems(param)
-	}
-	properties[name] = propSchema
 	isRequired, _ := param["required"].(bool)
 	if isRequired || in == paramLocationPath {
-		*required = append(*required, name)
+		appendRequiredUnique(required, name)
 	}
-}
-
-func extractParamArrayItems(param map[string]any) map[string]any {
-	items := map[string]any{"type": paramTypeString}
-	if rawItems, itemsOk := param["items"].(map[string]any); itemsOk {
-		if itemType := openapi.StringValuePublic(rawItems["type"]); itemType != "" {
-			items = map[string]any{"type": itemType}
-		}
-	}
-	if schema, schemaOk := param["schema"].(map[string]any); schemaOk {
-		if rawItems, schemaItemsOk := schema["items"].(map[string]any); schemaItemsOk {
-			if itemType := openapi.StringValuePublic(rawItems["type"]); itemType != "" {
-				items = map[string]any{"type": itemType}
-			}
-		}
-	}
-	return items
 }
 
 func processOAS3RequestBody(
@@ -340,8 +337,30 @@ func processOAS3RequestBody(
 	}
 	for _, mediaType := range []string{"application/json", "application/x-www-form-urlencoded"} {
 		if media, mediaOk := content[mediaType].(map[string]any); mediaOk {
-			if schema, schemaOk := media["schema"].(map[string]any); schemaOk {
-				addSchemaProperties(document, schema, properties, required)
+			rawSchema, _ := media["schema"].(map[string]any)
+			if rawSchema != nil {
+				resolved := openapi.DerefForCodegen(document, rawSchema)
+				if resolved != nil {
+					rawSchema = resolved
+				}
+				normalized := normalizeSchema(document, rawSchema, "Request body")
+				if normalized["type"] == paramTypeObject {
+					if propMap, ok := normalized["properties"].(map[string]any); ok {
+						for name, rawProp := range propMap {
+							properties[name] = rawProp
+						}
+					}
+					if reqFields, ok := normalized["required"].([]string); ok {
+						for _, field := range reqFields {
+							appendRequiredUnique(required, field)
+						}
+					}
+					break
+				}
+				properties["requestBody"] = normalized
+				if bodyRequired, _ := requestBody["required"].(bool); bodyRequired {
+					appendRequiredUnique(required, "requestBody")
+				}
 			}
 			break
 		}
@@ -363,42 +382,112 @@ func addSchemaProperties(
 	if reqFields, ok := resolved["required"].([]any); ok {
 		for _, r := range reqFields {
 			if s, strOk := r.(string); strOk {
-				if !containsString(*required, s) {
-					*required = append(*required, s)
-				}
+				appendRequiredUnique(required, s)
 			}
 		}
 	}
 }
 
 func buildBodyPropSchema(document map[string]any, name string, rawProp any) map[string]any {
-	prop := openapi.DerefForCodegen(document, rawProp)
-	propType := openapi.StringValuePublic(prop["type"])
-	if propType == "" {
-		propType = paramTypeString
-	}
-	desc := openapi.StringValuePublic(prop["description"])
-	if desc == "" {
-		desc = fmt.Sprintf("Body field: %s", name)
-	}
-	propSchema := map[string]any{
-		"type":        propType,
-		"description": desc,
-	}
-	if propType == paramTypeArray {
-		items := map[string]any{"type": paramTypeString}
-		if rawItems, rawItemsOk := prop["items"].(map[string]any); rawItemsOk {
-			if itemType := openapi.StringValuePublic(rawItems["type"]); itemType != "" {
-				items = map[string]any{"type": itemType}
-			}
-		}
-		propSchema["items"] = items
-	}
-	return propSchema
+	return normalizeSchema(document, rawProp, fmt.Sprintf("Body field: %s", name))
 }
 
 func containsString(values []string, target string) bool {
 	return slices.Contains(values, target)
+}
+
+func appendRequiredUnique(required *[]string, name string) {
+	if name == "" || containsString(*required, name) {
+		return
+	}
+	*required = append(*required, name)
+}
+
+func normalizeSchema(document map[string]any, rawSchema any, fallbackDescription string) map[string]any {
+	resolved := openapi.DerefForCodegen(document, rawSchema)
+	schema := map[string]any{}
+
+	desc := openapi.StringValuePublic(resolved["description"])
+	if desc == "" {
+		desc = fallbackDescription
+	}
+	if desc != "" {
+		schema["description"] = desc
+	}
+
+	schemaType := openapi.StringValuePublic(resolved["type"])
+	if schemaType == "" {
+		if _, ok := resolved["properties"].(map[string]any); ok {
+			schemaType = paramTypeObject
+		} else if _, ok := resolved["items"].(map[string]any); ok {
+			schemaType = paramTypeArray
+		} else {
+			schemaType = paramTypeString
+		}
+	}
+	schema["type"] = schemaType
+
+	for _, key := range []string{
+		"format", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+		"minLength", "maxLength", "default", "example", "collectionFormat",
+	} {
+		copySchemaValue(schema, resolved, key)
+	}
+	if enumValues, ok := resolved["enum"].([]any); ok && len(enumValues) > 0 {
+		schema["enum"] = enumValues
+	}
+
+	switch schemaType {
+	case paramTypeArray:
+		if rawItems, ok := resolved["items"]; ok {
+			schema["items"] = normalizeSchema(document, rawItems, "")
+		} else {
+			schema["items"] = map[string]any{"type": paramTypeString}
+		}
+	case paramTypeObject:
+		if props, ok := resolved["properties"].(map[string]any); ok {
+			nested := make(map[string]any, len(props))
+			for name, rawProp := range props {
+				nested[name] = normalizeSchema(document, rawProp, fmt.Sprintf("Body field: %s", name))
+			}
+			schema["properties"] = nested
+		}
+		if reqFields := requiredFieldsFromSchema(resolved); len(reqFields) > 0 {
+			schema["required"] = reqFields
+		}
+	case paramTypeBoolean, paramTypeInteger, paramTypeNumber, paramTypeString:
+	default:
+		schema["type"] = paramTypeString
+	}
+
+	return schema
+}
+
+func copySchemaValue(dst, src map[string]any, key string) {
+	if value, ok := src[key]; ok {
+		dst[key] = value
+	}
+}
+
+func requiredFieldsFromSchema(schema map[string]any) []string {
+	switch reqFields := schema["required"].(type) {
+	case []string:
+		if len(reqFields) == 0 {
+			return nil
+		}
+		return append([]string(nil), reqFields...)
+	case []any:
+		required := make([]string, 0, len(reqFields))
+		for _, field := range reqFields {
+			name, ok := field.(string)
+			if ok && name != "" {
+				required = append(required, name)
+			}
+		}
+		return required
+	default:
+		return nil
+	}
 }
 
 // executeProxyCall executes an HTTP request to the target API for a proxy tool.
@@ -447,6 +536,7 @@ func executeProxyCall(
 	client := &http.Client{Timeout: httpClientTimeoutSeconds * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		slog.Error("HTTP proxy request failed", "path", tool.Path, "method", tool.Method, "error", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -460,7 +550,41 @@ func executeProxyCall(
 		return mcpgo.NewToolResultError(fmt.Sprintf("[Error] HTTP %d: %s", resp.StatusCode, string(respBody))), nil
 	}
 
-	return mcpgo.NewToolResultText(string(respBody)), nil
+	return newProxyResult(resp.StatusCode, resp.Header.Get("Content-Type"), respBody), nil
+}
+
+func newProxyResult(statusCode int, contentType string, body []byte) *mcpgo.CallToolResult {
+	parsed, formatted, ok := parseJSONToolBody(body)
+	if !ok {
+		return mcpgo.NewToolResultText(string(body))
+	}
+
+	return mcpgo.NewToolResultStructured(proxyResponseResult{
+		StatusCode:  statusCode,
+		ContentType: contentType,
+		Body:        parsed,
+	}, formatted)
+}
+
+func parseJSONToolBody(body []byte) (any, string, bool) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return nil, "", false
+	}
+	if trimmed[0] != '{' && trimmed[0] != '[' {
+		return nil, "", false
+	}
+
+	var parsed any
+	if err := json.Unmarshal(trimmed, &parsed); err != nil {
+		return nil, "", false
+	}
+
+	formatted := string(trimmed)
+	if pretty, err := json.MarshalIndent(parsed, "", "  "); err == nil {
+		formatted = string(pretty)
+	}
+	return parsed, formatted, true
 }
 
 func buildBodyReader(operation, arguments map[string]any, method string) (io.Reader, error) {

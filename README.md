@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Go Report](https://goreportcard.com/badge/github.com/caioreix/swagger-mcp)](https://goreportcard.com/report/github.com/caioreix/swagger-mcp)
 
-`swagger-mcp` is an MCP server that reads any Swagger/OpenAPI definition and exposes it to AI clients as structured tools — no glue code required. Point it at your API spec, connect your AI assistant, and start exploring endpoints, generating Go scaffolding, or proxying live requests instantly.
+`swagger-mcp` is an MCP server that reads any Swagger/OpenAPI definition and exposes it to AI clients as structured tools — no glue code required. Point it at your API spec, connect your AI assistant, and start exploring endpoints, inspecting schemas, or proxying live requests instantly.
 
 ---
 
@@ -17,11 +17,12 @@
 |---|---|
 | **Endpoint discovery** | List all API paths with HTTP methods and descriptions |
 | **Model inspection** | Explore request/response schemas for any endpoint |
-| **Go code generation** | Generate structs, MCP tool handlers, and complete server projects |
 | **Dynamic proxy mode** | Every Swagger endpoint becomes a live MCP tool — zero code required |
+| **Typed proxy schemas** | Proxy tools preserve OpenAPI-derived argument types instead of flattening everything to strings |
+| **Structured MCP responses** | Static tools and JSON proxy responses return `structuredContent` for easier agent processing |
 | **Endpoint filtering** | Regex-based path and HTTP method include/exclude rules |
 | **Authentication** | API Key, Bearer/JWT, Basic Auth, OAuth2 client credentials |
-| **Multiple transports** | `stdio`, SSE, and StreamableHTTP |
+| **Multiple transports** | `stdio`, StreamableHTTP, and legacy SSE |
 | **Built-in web UI** | Interactive tool dashboard for manual testing |
 | **Anti-hallucination guards** | Proxy tools include explicit LLM instructions to prevent data fabrication |
 | **Smart caching** | Downloaded specs cached locally with ETag/Last-Modified revalidation |
@@ -59,7 +60,7 @@ Open **Cursor → Settings → Features → MCP → + Add New MCP Server**:
 | Transport | `stdio` |
 | Command | `/absolute/path/to/build/swagger-mcp --swagger-url=https://your-api/swagger.json` |
 
-Your AI assistant can now discover endpoints, inspect models, and generate Go code against your API.
+Your AI assistant can now discover endpoints, inspect models, and proxy live API calls against your API.
 
 ---
 
@@ -73,18 +74,7 @@ Your AI assistant can now discover endpoints, inspect models, and generate Go co
 ./build/swagger-mcp --swagger-url="https://petstore.swagger.io/v2/swagger.json"
 ```
 
-**`sse`** — HTTP server with Server-Sent Events:
-
-```bash
-./build/swagger-mcp \
-  --transport=sse \
-  --port=8080 \
-  --swagger-url="https://petstore.swagger.io/v2/swagger.json"
-```
-
-Endpoints: `GET /sse` (event stream) · `POST /message?clientId=<id>` (send requests)
-
-**`streamable-http`** — HTTP server following the MCP StreamableHTTP spec:
+**`streamable-http`** — HTTP server following the MCP StreamableHTTP spec. Recommended for remote or multi-client deployments:
 
 ```bash
 ./build/swagger-mcp \
@@ -94,6 +84,17 @@ Endpoints: `GET /sse` (event stream) · `POST /message?clientId=<id>` (send requ
 ```
 
 Endpoints: `POST /mcp` (send/receive) · `DELETE /mcp` (terminate session)
+
+**`sse`** — legacy HTTP server with Server-Sent Events. Still available for compatibility, but `streamable-http` is preferred:
+
+```bash
+./build/swagger-mcp \
+  --transport=sse \
+  --port=8080 \
+  --swagger-url="https://petstore.swagger.io/v2/swagger.json"
+```
+
+Endpoints: `GET /sse` (event stream) · `POST /message?clientId=<id>` (send requests)
 
 ---
 
@@ -132,15 +133,18 @@ BEARER_TOKEN=my-jwt-token ./build/swagger-mcp --proxy-mode \
   --swagger-url="https://petstore.swagger.io/v2/swagger.json"
 ```
 
+**Tool naming:** single-API proxy tools use a `swagger_` prefix and `snake_case` names such as `swagger_find_pets`; multi-API proxy tools use the configured API name as the prefix, such as `petstore_find_pets`.
+
+**Proxy responses:** when the upstream API returns JSON, the tool response includes both text output and `structuredContent`.
+
 ---
 
 ### Web UI
 
-Pass `--ui` to open an interactive testing dashboard in your browser:
+Pass `--ui` to open an interactive testing dashboard in your browser. In stdio mode, the MCP server still talks over stdin/stdout and the UI is served on the configured HTTP port in the background:
 
 ```bash
-./build/swagger-mcp \
-  --transport=sse --port=8080 --ui \
+./build/swagger-mcp --ui --port=8080 \
   --swagger-url="https://petstore.swagger.io/v2/swagger.json"
 ```
 
@@ -159,8 +163,8 @@ Open `http://localhost:8080/` to browse tools, fill in parameters, and view JSON
 | Flag | Default | Env Variable | Description |
 |---|---|---|---|
 | `--swagger-url` | — | `SWAGGER_MCP_SWAGGER_URL` | URL of the Swagger/OpenAPI definition |
-| `--transport` | `stdio` | `SWAGGER_MCP_TRANSPORT` | `stdio`, `sse`, or `streamable-http` |
-| `--port` | `8080` | `SWAGGER_MCP_PORT` | HTTP port for SSE/StreamableHTTP |
+| `--transport` | `stdio` | `SWAGGER_MCP_TRANSPORT` | `stdio`, `streamable-http`, or legacy `sse` |
+| `--port` | `8080` | `SWAGGER_MCP_PORT` | HTTP port for StreamableHTTP/SSE and the stdio web UI |
 | `--log-level` | `info` | `LOG_LEVEL` | Log verbosity: `debug`, `info`, `warn`, `error` |
 | `--ui` | `false` | `SWAGGER_MCP_UI` | Enable the built-in web UI |
 | `--proxy-mode` | `false` | `SWAGGER_MCP_PROXY_MODE` | Dynamic proxy: each endpoint becomes an MCP tool |
@@ -209,7 +213,7 @@ cp .env.example .env
 
 ### Multi-API Configuration
 
-To proxy **multiple APIs simultaneously**, create a `.swagger-mcp.yaml` file in your project root (or pass `--config path/to/file.yaml`). Each entry generates its own set of proxy tools, prefixed with the API name:
+To proxy **multiple APIs simultaneously**, create a `.swagger-mcp.yaml` file in your project root (or pass `--config path/to/file.yaml`). Each entry generates its own set of proxy tools, prefixed with the normalized API name:
 
 ```yaml
 # .swagger-mcp.yaml
@@ -239,7 +243,7 @@ apis:
       oauth2_scopes: read:data,write:data
 ```
 
-**Tool naming:** proxy tools are prefixed with the API name — `petstore_addPet`, `github_listRepos`, etc. — so all APIs can coexist in the same MCP session without name conflicts.
+**Tool naming:** proxy tools are prefixed with the normalized API name and use `snake_case` — `petstore_find_pets`, `github_list_repos`, etc. — so all APIs can coexist in the same MCP session without name conflicts.
 
 **Credentials:** use `${ENV_VAR}` anywhere in the config file. Values are expanded at startup from environment variables (or `.env`), keeping secrets out of the YAML file.
 
@@ -279,7 +283,7 @@ In addition to running as an MCP server, `swagger-mcp` exposes standalone comman
 Equivalent to running `swagger-mcp` with no subcommand:
 
 ```bash
-swagger-mcp serve --swagger-url="https://petstore.swagger.io/v2/swagger.json" --transport=sse --port=8080
+swagger-mcp serve --swagger-url="https://petstore.swagger.io/v2/swagger.json" --transport=streamable-http --port=8080
 ```
 
 ### `inspect` — Explore an OpenAPI spec
@@ -315,35 +319,6 @@ swagger-mcp inspect models --swagger-url="https://petstore.swagger.io/v2/swagger
 swagger-mcp inspect models --swagger-file=./api.yaml --format=json
 ```
 
-### `generate` — Generate Go code
-
-Generate a complete MCP server project:
-
-```bash
-swagger-mcp generate server \
-  --swagger-url="https://petstore.swagger.io/v2/swagger.json" \
-  --module=github.com/acme/petstore-mcp \
-  --transport=stdio,sse \
-  --output=./petstore-server
-```
-
-Generate an MCP tool scaffold for a single endpoint:
-
-```bash
-swagger-mcp generate tool \
-  --swagger-url="https://petstore.swagger.io/v2/swagger.json" \
-  --path=/pet/{petId} \
-  --method=GET
-```
-
-Generate a Go struct for a schema model:
-
-```bash
-swagger-mcp generate model \
-  --swagger-url="https://petstore.swagger.io/v2/swagger.json" \
-  --model=Pet
-```
-
 ### `download` — Cache a spec locally
 
 Download a spec and print the saved path (useful for scripts and `.swagger-mcp` setup):
@@ -366,16 +341,14 @@ echo "SWAGGER_FILEPATH=$(swagger-mcp download --url=https://petstore.swagger.io/
 | `swagger_get_definition` | Download and cache a Swagger/OpenAPI document |
 | `swagger_list_endpoints` | List all API paths with HTTP methods and summaries |
 | `swagger_list_endpoint_models` | List request/response models for a specific endpoint |
-| `generateModelCode` | Generate Go structs from a schema model |
-| `generateEndpointToolCode` | Generate a Go MCP tool scaffold for an endpoint |
-| `generateServer` | Generate a complete, runnable Go MCP server project |
 | `swagger_get_version` | Return the server version |
 
 ## 🗣️ MCP Prompts
 
 | Prompt | Description |
 |---|---|
-| `add-endpoint` | Guided workflow: discover endpoint → inspect models → generate scaffold → implement |
+| `swagger_add_endpoint` | Guided workflow: discover endpoint → inspect models → integrate the endpoint into your project |
+| `add-endpoint` | Legacy alias for `swagger_add_endpoint` |
 
 Request a prompt with `prompts/get`:
 
@@ -383,11 +356,11 @@ Request a prompt with `prompts/get`:
 {
   "method": "prompts/get",
   "params": {
-    "name": "add-endpoint",
+    "name": "swagger_add_endpoint",
     "arguments": {
-      "swaggerUrl": "https://petstore.swagger.io/v2/swagger.json",
-      "endpointPath": "/pet/{petId}",
-      "httpMethod": "GET"
+      "swagger_url": "https://petstore.swagger.io/v2/swagger.json",
+      "endpoint_path": "/pet/{petId}",
+      "http_method": "GET"
     }
   }
 }
@@ -403,10 +376,6 @@ cmd/swagger-mcp/
 └── cmd/
     ├── root.go       Cobra root command — serves the MCP server by default
     ├── serve.go      explicit serve subcommand (same as root)
-    ├── generate.go   generate parent command
-    ├── generate_server.go
-    ├── generate_tool.go
-    ├── generate_model.go
     ├── inspect.go    inspect parent command
     ├── inspect_endpoints.go
     ├── inspect_endpoint.go
@@ -417,7 +386,6 @@ cmd/swagger-mcp/
     └── helpers.go    serveOptions struct, env var helpers, document loading, table printing
 internal/
 ├── app/              bootstrap, transport routing
-├── codegen/          Go code generation (structs, handlers, servers)
 ├── config/           config struct, .env loading, auth from env
 ├── logging/          structured slog setup
 ├── mcp/              JSON-RPC 2.0, tool/prompt handlers, proxy engine

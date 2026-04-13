@@ -34,10 +34,9 @@ make verify       # build + test + vet
 
 ```
 cmd/swagger-mcp/         Entry point and Cobra CLI commands
-  cmd/                   Subcommands (serve, generate, inspect, download, version)
+  cmd/                   Subcommands (serve, inspect, download, version)
 internal/
   app/                   MCP server bootstrap & transport routing
-  codegen/               Go code generation from OpenAPI specs
   config/                Config struct, .env loading, auth from env
   logging/               Structured slog setup
   mcp/                   MCP tools and protocol handlers

@@ -19,11 +19,11 @@ func newServeCmd(stdin io.Reader, stdout io.Writer, stderr io.Writer, code *int)
 This is the default command — running swagger-mcp without a subcommand is
 identical to running swagger-mcp serve.
 
-The server exposes tools for endpoint discovery, model inspection, Go code
-generation, and live API proxying over the configured transport protocol.
+The server exposes tools for endpoint discovery, model inspection, and live API
+proxying over the configured transport protocol.
 
 All flags can be set via environment variables using the SWAGGER_MCP_ prefix
-(e.g. SWAGGER_MCP_TRANSPORT=sse, SWAGGER_MCP_PORT=9090). Flags always take
+(e.g. SWAGGER_MCP_TRANSPORT=streamable-http, SWAGGER_MCP_PORT=9090). Flags always take
 precedence over environment variables.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,6 +21,25 @@ func newTestServer(t *testing.T) *mcp.ServerAdapter {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mcpServer, err := mcp.NewServer(config.Config{WorkingDir: testutil.RepoRoot(t), LogLevel: "error"}, logger)
+	if err != nil {
+		t.Fatalf("NewServer returned error: %v", err)
+	}
+	return mcp.NewServerAdapter(mcpServer)
+}
+
+func newProxyTestServer(t *testing.T) *mcp.ServerAdapter {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	workingDir := t.TempDir()
+	mapping := []byte("SWAGGER_FILEPATH=" + testutil.FixturePath(t, "petstore.json"))
+	if err := os.WriteFile(filepath.Join(workingDir, ".swagger-mcp"), mapping, 0o600); err != nil {
+		t.Fatalf("write .swagger-mcp: %v", err)
+	}
+	mcpServer, err := mcp.NewServer(config.Config{
+		WorkingDir: workingDir,
+		LogLevel:   "error",
+		ProxyMode:  true,
+	}, logger)
 	if err != nil {
 		t.Fatalf("NewServer returned error: %v", err)
 	}
@@ -105,11 +126,19 @@ func TestPromptsList(t *testing.T) {
 
 	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
 	prompts := result["prompts"].([]any)
-	if len(prompts) != 1 {
-		t.Fatalf("expected 1 prompt, got %d", len(prompts))
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 prompts, got %d", len(prompts))
 	}
-	if prompts[0].(map[string]any)["name"] != "add-endpoint" {
-		t.Fatalf("expected add-endpoint prompt, got %#v", prompts[0])
+
+	promptNames := make(map[string]bool, len(prompts))
+	for _, rawPrompt := range prompts {
+		prompt := rawPrompt.(map[string]any)
+		promptNames[prompt["name"].(string)] = true
+	}
+	for _, name := range []string{"add-endpoint", "swagger_add_endpoint"} {
+		if !promptNames[name] {
+			t.Fatalf("expected prompt %q in prompts/list response", name)
+		}
 	}
 }
 
@@ -128,6 +157,10 @@ func TestVersionTool(t *testing.T) {
 	text := content[0].(map[string]any)["text"].(string)
 	if !strings.Contains(text, config.Version) {
 		t.Fatalf("expected version tool response to include %q, got %q", config.Version, text)
+	}
+	structured := result["structuredContent"].(map[string]any)
+	if structured["version"] != config.Version {
+		t.Fatalf("expected structured version %q, got %#v", config.Version, structured)
 	}
 }
 
@@ -177,6 +210,9 @@ func TestListEndpointsToolJSONFormat(t *testing.T) {
 	}
 	if _, ok := parsed["endpoints"]; !ok {
 		t.Fatalf("expected JSON response to contain 'endpoints' field, got: %s", text)
+	}
+	if _, ok := result["structuredContent"].(map[string]any)["endpoints"]; !ok {
+		t.Fatalf("expected structuredContent to contain 'endpoints', got: %#v", result["structuredContent"])
 	}
 }
 
@@ -258,8 +294,11 @@ func TestUnknownToolReturnsErrorContent(t *testing.T) {
 func TestAddEndpointPrompt(t *testing.T) {
 	server := newTestServer(t)
 	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 7, "prompts/get", map[string]any{
-		"name":      "add-endpoint",
-		"arguments": map[string]string{"endpointPath": "/pets/{id}", "httpMethod": "GET"},
+		"name": "swagger_add_endpoint",
+		"arguments": map[string]string{
+			"endpoint_path": "/pets/{id}",
+			"http_method":   "GET",
+		},
 	}))
 	if err != nil {
 		t.Fatalf("HandleJSON returned error: %v", err)
@@ -353,9 +392,9 @@ func TestProxyToolNameWithAPIPrefix(t *testing.T) {
 		apiName string
 		want    string
 	}{
-		{"", "getpetbyid"},
-		{"petstore", "petstore_getpetbyid"},
-		{"my-api", "my-api_getpetbyid"},
+		{"", "swagger_get_pet_by_id"},
+		{"petstore", "petstore_get_pet_by_id"},
+		{"my-api", "my_api_get_pet_by_id"},
 	}
 
 	for _, tc := range cases {
@@ -373,8 +412,44 @@ func TestProxyToolNameWithoutOperationID(t *testing.T) {
 	}
 
 	got := mcp.ProxyToolName(ep, "store")
-	want := "store_get-pets-id"
+	want := "store_get_pets_id"
 	if got != want {
 		t.Errorf("proxyToolName = %q, want %q", got, want)
+	}
+}
+
+func TestProxyToolsExposeTypedInputSchema(t *testing.T) {
+	server := newProxyTestServer(t)
+	responseBytes, err := server.HandleJSON(testutil.JSONRPCRequest(t, 9, "tools/list", map[string]any{}))
+	if err != nil {
+		t.Fatalf("HandleJSON returned error: %v", err)
+	}
+
+	result := decodeResponse(t, responseBytes)["result"].(map[string]any)
+	tools := result["tools"].([]any)
+
+	var findPetsTool map[string]any
+	for _, rawTool := range tools {
+		tool := rawTool.(map[string]any)
+		if tool["name"] == "swagger_find_pets" {
+			findPetsTool = tool
+			break
+		}
+	}
+	if findPetsTool == nil {
+		t.Fatalf("expected swagger_find_pets tool in proxy tools list")
+	}
+
+	inputSchema := findPetsTool["inputSchema"].(map[string]any)
+	properties := inputSchema["properties"].(map[string]any)
+	if properties["limit"].(map[string]any)["type"] != "integer" {
+		t.Fatalf("expected limit param type integer, got %#v", properties["limit"])
+	}
+	tagsSchema := properties["tags"].(map[string]any)
+	if tagsSchema["type"] != "array" {
+		t.Fatalf("expected tags param type array, got %#v", tagsSchema)
+	}
+	if items, ok := tagsSchema["items"].(map[string]any); !ok || items["type"] != "string" {
+		t.Fatalf("expected tags array items type string, got %#v", tagsSchema["items"])
 	}
 }
