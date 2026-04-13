@@ -25,6 +25,7 @@ func serveStreamableHTTP(
 	if len(headerNames) > 0 {
 		handler = headerInjectMiddleware(mcpHandler, headerNames)
 	}
+	handler = auditMiddleware(handler, stLogger)
 
 	stLogger.Info("starting StreamableHTTP server", "port", port)
 	server := &http.Server{ //nolint:gosec // timeout configured by caller

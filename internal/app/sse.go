@@ -121,7 +121,7 @@ func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders 
 	sseLogger.Warn("SSE transport is deprecated; migrate to streamable-http instead")
 	server := &http.Server{ //nolint:gosec // timeout configured by caller
 		Addr:    ":" + port,
-		Handler: mux,
+		Handler: auditMiddleware(mux, sseLogger),
 	}
 	if err := server.ListenAndServe(); err != nil {
 		sseLogger.Error("SSE server error", "error", err)

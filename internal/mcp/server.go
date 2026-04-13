@@ -59,6 +59,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*mcpgoserver.MCPServer, 
 		mcpgoserver.WithToolCapabilities(false),
 		mcpgoserver.WithRecovery(),
 		mcpgoserver.WithInstructions(instructions),
+		mcpgoserver.WithHooks(NewAuditHooks(componentLogger)),
 	)
 
 	registerStaticTools(s, resolver, filter, cfg)
