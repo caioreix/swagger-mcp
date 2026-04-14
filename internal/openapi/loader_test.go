@@ -1,6 +1,7 @@
 package openapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -113,7 +114,7 @@ func TestSourceResolverUsesProjectMapping(t *testing.T) {
 	}
 
 	resolver := openapi.NewSourceResolver(temporaryDir, "", silentLogger())
-	document, err := resolver.Load("")
+	document, err := resolver.Load(context.Background(), "")
 	if err != nil {
 		t.Fatalf("resolver.Load returned error: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestSourceResolverPrefersCLIURLOverInputPath(t *testing.T) {
 	defer server.Close()
 
 	resolver := openapi.NewSourceResolver(t.TempDir(), server.URL, silentLogger())
-	document, err := resolver.Load("/definitely/missing.json")
+	document, err := resolver.Load(context.Background(), "/definitely/missing.json")
 	if err != nil {
 		t.Fatalf("resolver.Load returned error: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestResolvePathErrorsWhenMappedFileMissing(t *testing.T) {
 	}
 
 	resolver := openapi.NewSourceResolver(temporaryDir, "", silentLogger())
-	_, err := resolver.ResolvePath("")
+	_, err := resolver.ResolvePath(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected missing mapped file to fail")
 	}
@@ -181,7 +182,7 @@ func TestDownloadDefinition(t *testing.T) {
 
 	temporaryDir := t.TempDir()
 	resolver := openapi.NewSourceResolver(temporaryDir, "", silentLogger())
-	savedDefinition, err := resolver.DownloadDefinition(server.URL, temporaryDir)
+	savedDefinition, err := resolver.DownloadDefinition(context.Background(), server.URL, temporaryDir)
 	if err != nil {
 		t.Fatalf("DownloadDefinition returned error: %v", err)
 	}
@@ -200,7 +201,7 @@ func TestDownloadDefinitionReturnsHTTPError(t *testing.T) {
 	defer server.Close()
 
 	resolver := openapi.NewSourceResolver(t.TempDir(), "", silentLogger())
-	_, err := resolver.DownloadDefinition(server.URL, t.TempDir())
+	_, err := resolver.DownloadDefinition(context.Background(), server.URL, t.TempDir())
 	if err == nil {
 		t.Fatal("expected download failure")
 	}
@@ -236,11 +237,11 @@ func TestCachedOrDownloadRevalidatesWithETag(t *testing.T) {
 
 	temporaryDir := t.TempDir()
 	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	first, err := resolver.ResolvePath("")
+	first, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
-	second, err := resolver.ResolvePath("")
+	second, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -290,7 +291,7 @@ func TestCachedOrDownloadRedownloadsWhenMetadataMissing(t *testing.T) {
 
 	temporaryDir := t.TempDir()
 	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	first, err := resolver.ResolvePath("")
+	first, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
@@ -300,7 +301,7 @@ func TestCachedOrDownloadRedownloadsWhenMetadataMissing(t *testing.T) {
 		t.Fatalf("remove metadata: %v", removeErr)
 	}
 
-	second, err := resolver.ResolvePath("")
+	second, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -331,7 +332,7 @@ func TestCachedOrDownloadRedownloadsWhenCachedFileHashMismatches(t *testing.T) {
 
 	temporaryDir := t.TempDir()
 	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	resolvedPath, err := resolver.ResolvePath("")
+	resolvedPath, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
@@ -339,7 +340,7 @@ func TestCachedOrDownloadRedownloadsWhenCachedFileHashMismatches(t *testing.T) {
 		t.Fatalf("corrupt cache file: %v", writeErr)
 	}
 
-	resolvedPath, err = resolver.ResolvePath("")
+	resolvedPath, err = resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestCachedOrDownloadUpdatesCacheWhenRemoteContentChanges(t *testing.T) {
 
 	temporaryDir := t.TempDir()
 	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	_, err = resolver.ResolvePath("")
+	_, err = resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
@@ -393,7 +394,7 @@ func TestCachedOrDownloadUpdatesCacheWhenRemoteContentChanges(t *testing.T) {
 	_, metadataPath := cachePathsForURL(temporaryDir, server.URL)
 	initialMetadata := readTestCacheMetadata(t, metadataPath)
 
-	resolvedPath, err := resolver.ResolvePath("")
+	resolvedPath, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -448,14 +449,14 @@ func TestCachedOrDownloadFallsBackToGETWhenValidatorsAreUnavailable(t *testing.T
 
 	temporaryDir := t.TempDir()
 	resolver := openapi.NewSourceResolver(temporaryDir, server.URL, silentLogger())
-	_, err = resolver.ResolvePath("")
+	_, err = resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("first ResolvePath returned error: %v", err)
 	}
 	_, metadataPath := cachePathsForURL(temporaryDir, server.URL)
 	initialMetadata := readTestCacheMetadata(t, metadataPath)
 
-	resolvedPath, err := resolver.ResolvePath("")
+	resolvedPath, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("second ResolvePath returned error: %v", err)
 	}
@@ -520,7 +521,7 @@ func TestSourceResolverPreloadUsesLastModifiedForLaterLoads(t *testing.T) {
 	if preloadErr := resolver.Preload(); preloadErr != nil {
 		t.Fatalf("Preload returned error: %v", preloadErr)
 	}
-	resolvedPath, err := resolver.ResolvePath("")
+	resolvedPath, err := resolver.ResolvePath(context.Background(), "")
 	if err != nil {
 		t.Fatalf("ResolvePath returned error after preload: %v", err)
 	}

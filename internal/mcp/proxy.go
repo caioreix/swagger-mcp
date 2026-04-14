@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/caioreix/swagger-mcp/internal/config"
@@ -30,8 +29,10 @@ const (
 	paramLocationPath  = "path"
 	paramLocationQuery = "query"
 
-	httpClientTimeoutSeconds = 30
-	httpErrorStatusThreshold = 400
+	httpClientTimeoutSeconds  = 30
+	httpErrorStatusThreshold  = 400
+	maxProxyResponseBytes     = 10 * 1024 * 1024 // 10MB
+	maxProxyErrorResponseSize = 2048
 )
 
 // toolDefinition holds the MCP tool schema used for proxy tool registration and tests.
@@ -48,12 +49,12 @@ type proxyResponseResult struct {
 }
 
 // registerProxyTools registers dynamic proxy tools on the MCPServer.
-func registerProxyTools(s *mcpgoserver.MCPServer, tools []proxyTool, cfg config.Config) {
+func registerProxyTools(s *mcpgoserver.MCPServer, tools []proxyTool, cfg config.Config, logger *slog.Logger) {
 	for _, pt := range tools {
 		tool := buildMCPGoTool(pt)
 		captured := pt
 		s.AddTool(tool, func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-			return executeProxyCall(ctx, captured, req.GetArguments(), cfg)
+			return executeProxyCall(ctx, captured, req.GetArguments(), cfg, logger)
 		})
 	}
 }
@@ -99,6 +100,7 @@ type proxyTool struct {
 	Method     string
 	Path       string
 	Operation  map[string]any
+	Document   map[string]any
 	// Per-API context (populated when using multi-API config).
 	APIName string
 	BaseURL string
@@ -115,6 +117,7 @@ func buildProxyTools(
 	apiName string,
 	auth config.AuthConfig,
 	headers string,
+	logger *slog.Logger,
 ) ([]proxyTool, error) {
 	endpoints, err := openapi.ListEndpoints(document)
 	if err != nil {
@@ -128,7 +131,7 @@ func buildProxyTools(
 	for _, ep := range endpoints {
 		operation, opErr := openapi.FindOperation(document, ep.Path, ep.Method)
 		if opErr != nil {
-			slog.Warn("skipping endpoint: operation not found", "path", ep.Path, "method", ep.Method)
+			logger.Warn("skipping endpoint: operation not found", "path", ep.Path, "method", ep.Method)
 			continue
 		}
 
@@ -145,6 +148,7 @@ func buildProxyTools(
 			Method:    ep.Method,
 			Path:      ep.Path,
 			Operation: operation,
+			Document:  document,
 			APIName:   apiName,
 			BaseURL:   baseURL,
 			Auth:      auth,
@@ -571,6 +575,7 @@ func executeProxyCall(
 	tool proxyTool,
 	arguments map[string]any,
 	cfg config.Config,
+	logger *slog.Logger,
 ) (*mcpgo.CallToolResult, error) {
 	// Use per-tool base URL and auth when set (multi-API mode), otherwise fall back to global config.
 	effectiveBaseURL := tool.BaseURL
@@ -586,7 +591,10 @@ func executeProxyCall(
 	// Extract extra headers injected by the transport layer.
 	extraHeaders := ProxyHeadersFromContext(ctx)
 
-	targetURL := buildProxyURL(tool.Path, effectiveBaseURL, tool.Operation, arguments)
+	targetURL, err := buildProxyURL(tool.Document, tool.Path, effectiveBaseURL, tool.Operation, arguments)
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
 
 	method := strings.ToUpper(tool.Method)
 	body, err := buildBodyReader(tool.Operation, arguments, method)
@@ -603,26 +611,31 @@ func executeProxyCall(
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	applyProxyAuth(req, effectiveAuth)
+	if err := applyProxyAuth(ctx, req, effectiveAuth); err != nil {
+		return nil, fmt.Errorf("apply authentication: %w", err)
+	}
 	applyCustomHeaders(req, effectiveHeaders)
 	applyExtraHeaders(req, extraHeaders)
-	applyHeaderParams(req, tool.Operation, arguments)
+	applyHeaderParams(req, tool.Document, tool.Operation, arguments)
 
-	client := &http.Client{Timeout: httpClientTimeoutSeconds * time.Second}
-	resp, err := client.Do(req)
+	resp, err := proxyHTTPClient.Do(req)
 	if err != nil {
-		slog.Error("HTTP proxy request failed", "path", tool.Path, "method", tool.Method, "error", err)
+		logger.Error("HTTP proxy request failed", "path", tool.Path, "method", tool.Method, "error", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProxyResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
 	if resp.StatusCode >= httpErrorStatusThreshold {
-		return mcpgo.NewToolResultError(fmt.Sprintf("[Error] HTTP %d: %s", resp.StatusCode, string(respBody))), nil
+		errBody := respBody
+		if len(errBody) > maxProxyErrorResponseSize {
+			errBody = append(errBody[:maxProxyErrorResponseSize:maxProxyErrorResponseSize], []byte("... [truncated]")...)
+		}
+		return mcpgo.NewToolResultError(fmt.Sprintf("[Error] HTTP %d: %s", resp.StatusCode, string(errBody))), nil
 	}
 
 	return newProxyResult(resp.StatusCode, resp.Header.Get("Content-Type"), respBody), nil
@@ -681,14 +694,14 @@ func requiresBody(method string) bool {
 	return method == "POST" || method == "PUT" || method == "PATCH"
 }
 
-func applyHeaderParams(req *http.Request, operation, arguments map[string]any) {
+func applyHeaderParams(req *http.Request, document map[string]any, operation, arguments map[string]any) {
 	params, ok := operation["parameters"].([]any)
 	if !ok {
 		return
 	}
 	for _, rawParam := range params {
-		param, paramOk := rawParam.(map[string]any)
-		if !paramOk {
+		param := openapi.DerefForCodegen(document, rawParam)
+		if param == nil {
 			continue
 		}
 		if openapi.StringValuePublic(param["in"]) == "header" {
@@ -700,48 +713,54 @@ func applyHeaderParams(req *http.Request, operation, arguments map[string]any) {
 	}
 }
 
-func buildProxyURL(endpointPath, baseURL string, operation map[string]any, arguments map[string]any) string {
-	path := substitutePathParams(endpointPath, operation, arguments)
+func buildProxyURL(document map[string]any, endpointPath, baseURL string, operation map[string]any, arguments map[string]any) (string, error) {
+	path, err := substitutePathParams(document, endpointPath, operation, arguments)
+	if err != nil {
+		return "", err
+	}
 	targetURL := strings.TrimRight(baseURL, "/") + path
 
-	queryValues := buildQueryParams(operation, arguments)
+	queryValues := buildQueryParams(document, operation, arguments)
 	if encoded := queryValues.Encode(); encoded != "" {
 		targetURL += "?" + encoded
 	}
 
-	return targetURL
+	return targetURL, nil
 }
 
-func substitutePathParams(endpointPath string, operation, arguments map[string]any) string {
+func substitutePathParams(document map[string]any, endpointPath string, operation, arguments map[string]any) (string, error) {
 	path := endpointPath
 	params, ok := operation["parameters"].([]any)
 	if !ok {
-		return path
+		return path, nil
 	}
 	for _, rawParam := range params {
-		param, paramOk := rawParam.(map[string]any)
-		if !paramOk {
+		param := openapi.DerefForCodegen(document, rawParam)
+		if param == nil {
 			continue
 		}
 		if openapi.StringValuePublic(param["in"]) == paramLocationPath {
 			name := openapi.StringValuePublic(param["name"])
 			if v, valOk := arguments[name]; valOk {
-				path = strings.ReplaceAll(path, "{"+name+"}", fmt.Sprint(v))
+				path = strings.ReplaceAll(path, "{"+name+"}", url.PathEscape(fmt.Sprint(v)))
 			}
 		}
 	}
-	return path
+	if strings.Contains(path, "{") {
+		return "", fmt.Errorf("missing required path parameters in path: %s", path)
+	}
+	return path, nil
 }
 
-func buildQueryParams(operation, arguments map[string]any) url.Values {
+func buildQueryParams(document map[string]any, operation, arguments map[string]any) url.Values {
 	queryValues := url.Values{}
 	params, ok := operation["parameters"].([]any)
 	if !ok {
 		return queryValues
 	}
 	for _, rawParam := range params {
-		param, paramOk := rawParam.(map[string]any)
-		if !paramOk {
+		param := openapi.DerefForCodegen(document, rawParam)
+		if param == nil {
 			continue
 		}
 		if openapi.StringValuePublic(param["in"]) == paramLocationQuery {
@@ -840,14 +859,22 @@ func decodeBodyArg(bodyArg any) any {
 	return bodyArg
 }
 
-func applyProxyAuth(req *http.Request, auth config.AuthConfig) {
+func applyProxyAuth(ctx context.Context, req *http.Request, auth config.AuthConfig) error {
 	if auth.BearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+auth.BearerToken)
-		return
+		return nil
 	}
 	if auth.BasicUser != "" {
 		req.SetBasicAuth(auth.BasicUser, auth.BasicPass)
-		return
+		return nil
+	}
+	if auth.OAuth2URL != "" {
+		token, err := fetchOAuth2Token(ctx, auth)
+		if err != nil {
+			return fmt.Errorf("oauth2 authentication: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
 	}
 	if auth.APIKey != "" {
 		switch strings.ToLower(auth.APIKeyIn) {
@@ -861,6 +888,7 @@ func applyProxyAuth(req *http.Request, auth config.AuthConfig) {
 			req.Header.Set(auth.APIKeyHeader, auth.APIKey)
 		}
 	}
+	return nil
 }
 
 func applyCustomHeaders(req *http.Request, headers string) {

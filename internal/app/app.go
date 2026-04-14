@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/caioreix/swagger-mcp/internal/config"
 	"github.com/caioreix/swagger-mcp/internal/logging"
@@ -47,7 +49,12 @@ func Run(cfg config.Config, stdin io.Reader, stdout io.Writer, _ io.Writer) int 
 	)
 
 	if cfg.EnableUI && cfg.Transport == "stdio" {
-		startWebUIBackground(adapter, logger, cfg.Port)
+		uiServer := startWebUIBackground(adapter, logger, cfg.Port)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = uiServer.Shutdown(ctx)
+		}()
 	}
 
 	switch cfg.Transport {

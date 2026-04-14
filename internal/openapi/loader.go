@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caioreix/swagger-mcp/internal/logging"
@@ -26,6 +28,7 @@ type SourceResolver struct {
 	SwaggerURL string
 	Client     *http.Client
 	logger     *slog.Logger
+	cacheMu    *sync.Mutex
 }
 
 func NewSourceResolver(workingDir, swaggerURL string, loggers ...*slog.Logger) SourceResolver {
@@ -38,11 +41,12 @@ func NewSourceResolver(workingDir, swaggerURL string, loggers ...*slog.Logger) S
 		SwaggerURL: strings.TrimSpace(swaggerURL),
 		Client:     &http.Client{Timeout: httpClientTimeout},
 		logger:     logging.WithComponent(logger, "openapi.resolver"),
+		cacheMu:    &sync.Mutex{},
 	}
 }
 
-func (r SourceResolver) Load(swaggerFilePath string) (map[string]any, error) {
-	resolvedPath, err := r.ResolvePath(swaggerFilePath)
+func (r SourceResolver) Load(ctx context.Context, swaggerFilePath string) (map[string]any, error) {
+	resolvedPath, err := r.ResolvePath(ctx, swaggerFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -59,16 +63,16 @@ func (r SourceResolver) Preload() error {
 		return nil
 	}
 	r.logger.Info("preloading swagger definition from startup URL", "url", r.SwaggerURL)
-	if _, err := r.cachedOrDownload(r.SwaggerURL); err != nil {
+	if _, err := r.cachedOrDownload(context.Background(), r.SwaggerURL); err != nil {
 		return fmt.Errorf("preload swagger definition from %s: %w", r.SwaggerURL, err)
 	}
 	return nil
 }
 
-func (r SourceResolver) ResolvePath(swaggerFilePath string) (string, error) {
+func (r SourceResolver) ResolvePath(ctx context.Context, swaggerFilePath string) (string, error) {
 	if r.SwaggerURL != "" {
 		r.logger.Debug("resolving swagger definition from startup URL", "url", r.SwaggerURL)
-		return r.cachedOrDownload(r.SwaggerURL)
+		return r.cachedOrDownload(ctx, r.SwaggerURL)
 	}
 
 	if strings.TrimSpace(swaggerFilePath) != "" {

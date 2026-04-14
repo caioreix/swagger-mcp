@@ -1,8 +1,13 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/caioreix/swagger-mcp/internal/mcp"
 	mcpgoserver "github.com/mark3labs/mcp-go/server"
@@ -32,10 +37,35 @@ func serveStreamableHTTP(
 		Addr:    ":" + port,
 		Handler: handler,
 	}
-	if err := server.ListenAndServe(); err != nil {
-		stLogger.Error("StreamableHTTP server error", "error", err)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+
+	select {
+	case err := <-serverErr:
+		stLogger.Error("server error", "error", err)
+		return 1
+	case sig := <-quit:
+		stLogger.Info("received shutdown signal", "signal", sig)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		stLogger.Error("graceful shutdown failed", "error", err)
 		return 1
 	}
+
+	stLogger.Info("server stopped gracefully")
 	return 0
 }
 

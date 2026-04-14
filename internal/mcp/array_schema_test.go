@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -69,7 +70,7 @@ func TestCachedSwaggerProxyToolsHaveValidArraySchemas(t *testing.T) { //nolint:g
 		t.Fatalf("ReadDefinitionFromFile: %v", err)
 	}
 
-	tools, err := mcp.BuildProxyTools(document, "http://localhost", nil, "", config.AuthConfig{}, "")
+	tools, err := mcp.BuildProxyTools(document, "http://localhost", nil, "", config.AuthConfig{}, "", slog.Default())
 	if err != nil {
 		t.Fatalf("buildProxyTools: %v", err)
 	}

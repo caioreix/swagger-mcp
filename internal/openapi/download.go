@@ -38,7 +38,7 @@ type definitionFetchResult struct {
 	statusCode     int
 }
 
-func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefinition, error) {
+func (r SourceResolver) DownloadDefinition(ctx context.Context, url, saveLocation string) (SavedDefinition, error) {
 	if strings.TrimSpace(url) == "" {
 		return SavedDefinition{}, errors.New("URL is required")
 	}
@@ -46,7 +46,7 @@ func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefin
 		return SavedDefinition{}, errors.New("save location is required")
 	}
 
-	fetched, err := r.fetchDefinition(url, nil)
+	fetched, err := r.fetchDefinition(ctx, url, nil)
 	if err != nil {
 		return SavedDefinition{}, err
 	}
@@ -68,7 +68,10 @@ func (r SourceResolver) DownloadDefinition(url, saveLocation string) (SavedDefin
 	return SavedDefinition{FilePath: filePath, URL: url, Type: fetched.definitionType}, nil
 }
 
-func (r SourceResolver) cachedOrDownload(url string) (string, error) {
+func (r SourceResolver) cachedOrDownload(ctx context.Context, url string) (string, error) {
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+
 	cacheDir := filepath.Join(r.WorkingDir, "swagger-cache")
 	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
 		return "", fmt.Errorf("create cache directory: %w", err)
@@ -84,7 +87,7 @@ func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 	}
 
 	if !validCache {
-		fetched, fetchErr := r.fetchDefinition(url, nil)
+		fetched, fetchErr := r.fetchDefinition(ctx, url, nil)
 		if fetchErr != nil {
 			return "", fetchErr
 		}
@@ -100,7 +103,7 @@ func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 		return cachePath, nil
 	}
 
-	fetched, err := r.fetchDefinition(url, &metadata)
+	fetched, err := r.fetchDefinition(ctx, url, &metadata)
 	if err != nil {
 		return "", err
 	}
@@ -144,11 +147,11 @@ func (r SourceResolver) cachedOrDownload(url string) (string, error) {
 	return cachePath, nil
 }
 
-func (r SourceResolver) fetchDefinition(url string, metadata *cacheMetadata) (definitionFetchResult, error) {
+func (r SourceResolver) fetchDefinition(ctx context.Context, url string, metadata *cacheMetadata) (definitionFetchResult, error) {
 	conditionalRequest := metadata != nil && (metadata.ETag != "" || metadata.LastModified != "")
 	r.logger.Info("fetching swagger definition", "url", url, "conditional", conditionalRequest)
 
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return definitionFetchResult{}, fmt.Errorf("create request: %w", err)
 	}

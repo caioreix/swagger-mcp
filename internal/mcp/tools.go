@@ -89,7 +89,7 @@ Error Handling:
 			IdempotentHint:  new(true),
 			OpenWorldHint:   new(true),
 		}),
-	), func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	), func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 		urlVal, err := req.RequireString("url")
 		if err != nil {
 			return mcpgo.NewToolResultError(err.Error()), nil
@@ -105,7 +105,7 @@ Error Handling:
 		if !filepath.IsAbs(saveLocation) {
 			saveLocation = filepath.Join(cfg.WorkingDir, saveLocation)
 		}
-		savedDefinition, err := resolver.DownloadDefinition(urlVal, saveLocation)
+		savedDefinition, err := resolver.DownloadDefinition(ctx, urlVal, saveLocation)
 		if err != nil {
 			return mcpgo.NewToolResultError(
 				fmt.Sprintf(
@@ -167,8 +167,8 @@ Error Handling:
 			IdempotentHint:  new(true),
 			OpenWorldHint:   new(false),
 		}),
-	), func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-		document, err := resolver.Load(req.GetString("swaggerFilePath", ""))
+	), func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		document, err := resolver.Load(ctx, req.GetString("swaggerFilePath", ""))
 		if err != nil {
 			return mcpgo.NewToolResultError(swaggerSourceError("list endpoints", err)), nil
 		}
@@ -251,8 +251,8 @@ Error Handling:
 			IdempotentHint:  new(true),
 			OpenWorldHint:   new(false),
 		}),
-	), func(_ context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-		document, err := resolver.Load(req.GetString("swaggerFilePath", ""))
+	), func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		document, err := resolver.Load(ctx, req.GetString("swaggerFilePath", ""))
 		if err != nil {
 			return mcpgo.NewToolResultError(swaggerSourceError("list endpoint models", err)), nil
 		}

@@ -1,13 +1,18 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
+	"time"
 )
 
 const sseClientBufferSize = 64
@@ -123,10 +128,35 @@ func serveSSE(handler jsonHandler, logger *slog.Logger, port string, sseHeaders 
 		Addr:    ":" + port,
 		Handler: auditMiddleware(mux, sseLogger),
 	}
-	if err := server.ListenAndServe(); err != nil {
-		sseLogger.Error("SSE server error", "error", err)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+
+	select {
+	case err := <-serverErr:
+		sseLogger.Error("server error", "error", err)
+		return 1
+	case sig := <-quit:
+		sseLogger.Info("received shutdown signal", "signal", sig)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		sseLogger.Error("graceful shutdown failed", "error", err)
 		return 1
 	}
+
+	sseLogger.Info("server stopped gracefully")
 	return 0
 }
 

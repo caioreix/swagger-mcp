@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -223,9 +224,9 @@ func resolveDocument(swaggerURL, swaggerFile string) (map[string]any, error) {
 	}
 	resolver := openapi.NewSourceResolver(workingDir, swaggerURL)
 	if swaggerFile != "" {
-		return resolver.Load(swaggerFile)
+		return resolver.Load(context.Background(), swaggerFile)
 	}
-	return resolver.Load("")
+	return resolver.Load(context.Background(), "")
 }
 
 // printTable prints a simple aligned two-dimensional table to out.

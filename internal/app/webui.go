@@ -1,11 +1,16 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 const webUIHTML = `<!DOCTYPE html>
@@ -210,17 +215,14 @@ init();
 </body>
 </html>`
 
-func serveWebUI(handler jsonHandler, logger *slog.Logger, port string) int {
-	uiLogger := componentLogger(logger, "app.webui")
+func buildWebUIMux(handler jsonHandler) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Serve the web UI
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, webUIHTML)
 	})
 
-	// JSON-RPC proxy endpoint for the UI
 	mux.HandleFunc("POST /api/rpc", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -251,15 +253,45 @@ func serveWebUI(handler jsonHandler, logger *slog.Logger, port string) int {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	uiLogger.Info("starting web UI", "port", port, "url", fmt.Sprintf("http://localhost:%s", port))
+	return mux
+}
+
+func serveWebUI(handler jsonHandler, logger *slog.Logger, port string) int {
+	uiLogger := componentLogger(logger, "app.webui")
 	server := &http.Server{ //nolint:gosec // timeout configured by caller
 		Addr:    ":" + port,
-		Handler: mux,
+		Handler: buildWebUIMux(handler),
 	}
-	if err := server.ListenAndServe(); err != nil {
-		uiLogger.Error("web UI server error", "error", err)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		uiLogger.Info("starting web UI", "port", port, "url", fmt.Sprintf("http://localhost:%s", port))
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+
+	select {
+	case err := <-serverErr:
+		uiLogger.Error("server error", "error", err)
+		return 1
+	case sig := <-quit:
+		uiLogger.Info("received shutdown signal", "signal", sig)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		uiLogger.Error("graceful shutdown failed", "error", err)
 		return 1
 	}
+
+	uiLogger.Info("server stopped gracefully")
 	return 0
 }
 
@@ -272,11 +304,19 @@ func writeJSONError(w http.ResponseWriter, message string) {
 	_, _ = w.Write(data)
 }
 
-// startWebUIBackground starts the web UI on a separate goroutine.
-func startWebUIBackground(handler jsonHandler, logger *slog.Logger, port string) {
+// startWebUIBackground starts the web UI server in a background goroutine and
+// returns the *http.Server so the caller can shut it down when done.
+func startWebUIBackground(handler jsonHandler, logger *slog.Logger, port string) *http.Server {
+	uiLogger := componentLogger(logger, "app.webui")
+	server := &http.Server{ //nolint:gosec // timeout configured by caller
+		Addr:    ":" + port,
+		Handler: buildWebUIMux(handler),
+	}
 	go func() {
-		uiLogger := componentLogger(logger, "app.webui")
 		uiLogger.Info("starting web UI in background", "port", port, "url", fmt.Sprintf("http://localhost:%s", port))
-		_ = serveWebUI(handler, logger, port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			uiLogger.Error("web UI background server error", "error", err)
+		}
 	}()
+	return server
 }

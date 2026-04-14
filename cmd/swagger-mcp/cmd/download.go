@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -61,7 +62,7 @@ Example:
 			}
 
 			resolver := openapi.NewSourceResolver(workingDir, "")
-			saved, err := resolver.DownloadDefinition(url, output)
+			saved, err := resolver.DownloadDefinition(context.Background(), url, output)
 			if err != nil {
 				return fmt.Errorf("download definition: %w", err)
 			}

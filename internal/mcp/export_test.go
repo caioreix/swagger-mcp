@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"log/slog"
+
 	"github.com/caioreix/swagger-mcp/internal/config"
 	"github.com/caioreix/swagger-mcp/internal/openapi"
 )
@@ -18,8 +20,9 @@ func BuildProxyTools(
 	apiName string,
 	auth config.AuthConfig,
 	headers string,
+	logger *slog.Logger,
 ) ([]proxyTool, error) {
-	return buildProxyTools(document, baseURL, filter, apiName, auth, headers)
+	return buildProxyTools(document, baseURL, filter, apiName, auth, headers, logger)
 }
 
 // BuildRequestBody is a test export of buildRequestBody.

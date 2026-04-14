@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -63,7 +64,7 @@ func NewServer(cfg config.Config, logger *slog.Logger) (*mcpgoserver.MCPServer, 
 	)
 
 	registerStaticTools(s, resolver, filter, cfg)
-	registerProxyTools(s, proxyTools, cfg)
+	registerProxyTools(s, proxyTools, cfg, componentLogger)
 	registerPrompts(s)
 
 	return s, nil
@@ -75,7 +76,7 @@ func initProxyTools(
 	filter *openapi.EndpointFilter,
 	logger *slog.Logger,
 ) ([]proxyTool, error) {
-	document, err := resolver.Load("")
+	document, err := resolver.Load(context.Background(), "")
 	if err != nil {
 		return nil, fmt.Errorf("load swagger definition for proxy mode: %w", err)
 	}
@@ -95,7 +96,7 @@ func initProxyTools(
 		return nil, errors.New("no base URL available: provide --base-url or ensure the swagger spec defines one")
 	}
 
-	tools, err := buildProxyTools(document, baseURL, filter, "", cfg.Auth, cfg.Headers)
+	tools, err := buildProxyTools(document, baseURL, filter, "", cfg.Auth, cfg.Headers, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +123,7 @@ func initAPIProxyTools(api config.APIConfig, workingDir string, logger *slog.Log
 		return nil, fmt.Errorf("load swagger spec: %w", err)
 	}
 
-	document, err := apiResolver.Load("")
+	document, err := apiResolver.Load(context.Background(), "")
 	if err != nil {
 		return nil, fmt.Errorf("parse swagger definition: %w", err)
 	}
@@ -152,7 +153,7 @@ func initAPIProxyTools(api config.APIConfig, workingDir string, logger *slog.Log
 		return nil, fmt.Errorf("compile endpoint filters: %w", err)
 	}
 
-	tools, err := buildProxyTools(document, baseURL, filter, api.Name, api.Auth, api.Headers)
+	tools, err := buildProxyTools(document, baseURL, filter, api.Name, api.Auth, api.Headers, logger)
 	if err != nil {
 		return nil, err
 	}
