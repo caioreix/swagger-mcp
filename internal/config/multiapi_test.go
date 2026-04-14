@@ -14,29 +14,36 @@ func TestLoadMultiAPIConfig_Basic(t *testing.T) {
 	content := `
 apis:
   - name: petstore
-    swagger_url: https://petstore.swagger.io/v2/swagger.json
+    spec_url: https://petstore.swagger.io/v2/swagger.json
     base_url: https://petstore.swagger.io/v2
     auth:
-      bearer_token: my-token
-    headers: "X-Tenant=acme"
-    include_paths: "^/pet.*"
-    exclude_methods: "DELETE"
+      type: bearer
+      token: my-token
+    headers:
+      X-Tenant: acme
+    filter:
+      include_paths:
+        - "^/pet.*"
+      exclude_methods:
+        - DELETE
   - name: github
-    swagger_url: ./specs/github.yaml
+    spec_url: ./specs/github.yaml
     auth:
-      api_key: ghp_xxx
-      api_key_header: Authorization
-      api_key_in: header
+      type: api_key
+      key: ghp_xxx
+      header: Authorization
+      in: header
 `
 	path := filepath.Join(dir, ".swagger-mcp.yaml")
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	apis, err := config.LoadMultiAPIConfig(path)
+	result, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
+	apis := result.APIs
 
 	if len(apis) != 2 {
 		t.Fatalf("expected 2 APIs, got %d", len(apis))
@@ -88,30 +95,36 @@ func TestLoadMultiAPIConfig_EnvVarInterpolation(t *testing.T) {
 	content := `
 apis:
   - name: myapi
-    swagger_url: https://api.example.com/swagger.json
+    spec_url: https://api.example.com/swagger.json
     auth:
-      bearer_token: ${TEST_BEARER}
-      api_key: ${TEST_API_KEY}
+      type: bearer
+      token: ${TEST_BEARER}
+  - name: myapi2
+    spec_url: https://api2.example.com/swagger.json
+    auth:
+      type: api_key
+      key: ${TEST_API_KEY}
 `
 	path := filepath.Join(dir, ".swagger-mcp.yaml")
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	apis, err := config.LoadMultiAPIConfig(path)
+	result, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
+	apis := result.APIs
 
-	if len(apis) != 1 {
-		t.Fatalf("expected 1 API, got %d", len(apis))
+	if len(apis) != 2 {
+		t.Fatalf("expected 2 APIs, got %d", len(apis))
 	}
 
 	if apis[0].Auth.BearerToken != "secret-token" {
 		t.Errorf("BearerToken = %q, want %q", apis[0].Auth.BearerToken, "secret-token")
 	}
-	if apis[0].Auth.APIKey != "api-key-value" {
-		t.Errorf("APIKey = %q, want %q", apis[0].Auth.APIKey, "api-key-value")
+	if apis[1].Auth.APIKey != "api-key-value" {
+		t.Errorf("APIKey = %q, want %q", apis[1].Auth.APIKey, "api-key-value")
 	}
 }
 
@@ -147,12 +160,12 @@ apis:
 	}
 
 	// "apis:" with no block items parses as empty string — treated as no APIs configured.
-	apis, err := config.LoadMultiAPIConfig(path)
+	result, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
-	if len(apis) != 0 {
-		t.Errorf("expected 0 APIs, got %d", len(apis))
+	if len(result.APIs) != 0 {
+		t.Errorf("expected 0 APIs, got %d", len(result.APIs))
 	}
 }
 
@@ -166,12 +179,12 @@ other_key: value
 		t.Fatal(err)
 	}
 
-	apis, err := config.LoadMultiAPIConfig(path)
+	result, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
-	if apis != nil {
-		t.Errorf("expected nil APIs, got %v", apis)
+	if result.APIs != nil {
+		t.Errorf("expected nil APIs, got %v", result.APIs)
 	}
 }
 
@@ -220,10 +233,11 @@ apis:
 		t.Fatal(err)
 	}
 
-	apis, err := config.LoadMultiAPIConfig(path)
+	result, err := config.LoadMultiAPIConfig(path)
 	if err != nil {
 		t.Fatalf("LoadMultiAPIConfig: %v", err)
 	}
+	apis := result.APIs
 
 	auth := apis[0].Auth
 	if auth.APIKeyHeader != "X-API-Key" {
@@ -233,3 +247,387 @@ apis:
 		t.Errorf("default APIKeyIn = %q, want %q", auth.APIKeyIn, "header")
 	}
 }
+
+func TestLoadMultiAPIConfig_NewFormat(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+server:
+  transport: streamable-http
+  port: "9090"
+  log_level: debug
+  enable_ui: true
+  proxy_headers:
+    - Authorization
+    - X-Tenant-ID
+
+apis:
+  - name: petstore
+    spec_url: https://petstore.swagger.io/v2/swagger.json
+    base_url: https://petstore.swagger.io/v2
+    auth:
+      type: bearer
+      token: bearer-tok
+    headers:
+      X-Tenant: acme
+      X-Version: v2
+    filter:
+      include_paths:
+        - "^/pet.*"
+      exclude_methods:
+        - DELETE
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+
+	// Verify server block.
+	srv := result.Server
+	if srv.Transport != "streamable-http" {
+		t.Errorf("Server.Transport = %q, want %q", srv.Transport, "streamable-http")
+	}
+	if srv.Port != "9090" {
+		t.Errorf("Server.Port = %q, want %q", srv.Port, "9090")
+	}
+	if srv.LogLevel != "debug" {
+		t.Errorf("Server.LogLevel = %q, want %q", srv.LogLevel, "debug")
+	}
+	if !srv.EnableUI {
+		t.Error("Server.EnableUI = false, want true")
+	}
+	if len(srv.ProxyHeaders) != 2 || srv.ProxyHeaders[0] != "Authorization" || srv.ProxyHeaders[1] != "X-Tenant-ID" {
+		t.Errorf("Server.ProxyHeaders = %v, want [Authorization X-Tenant-ID]", srv.ProxyHeaders)
+	}
+
+	// Verify API.
+	if len(result.APIs) != 1 {
+		t.Fatalf("expected 1 API, got %d", len(result.APIs))
+	}
+	pet := result.APIs[0]
+	if pet.SwaggerURL != "https://petstore.swagger.io/v2/swagger.json" {
+		t.Errorf("SwaggerURL = %q", pet.SwaggerURL)
+	}
+	if pet.Auth.BearerToken != "bearer-tok" {
+		t.Errorf("BearerToken = %q", pet.Auth.BearerToken)
+	}
+	// Map headers should be sorted: X-Tenant=acme,X-Version=v2.
+	if pet.Headers != "X-Tenant=acme,X-Version=v2" {
+		t.Errorf("Headers = %q, want %q", pet.Headers, "X-Tenant=acme,X-Version=v2")
+	}
+	if pet.Filter.IncludePaths != "^/pet.*" {
+		t.Errorf("Filter.IncludePaths = %q", pet.Filter.IncludePaths)
+	}
+	if pet.Filter.ExcludeMethods != "DELETE" {
+		t.Errorf("Filter.ExcludeMethods = %q", pet.Filter.ExcludeMethods)
+	}
+}
+
+func TestLoadMultiAPIConfig_HeadersMap(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+apis:
+  - name: mapheaders
+    spec_url: https://api.example.com/swagger.json
+    headers:
+      X-Tenant: acme
+      X-Version: v2
+  - name: stringheaders
+    spec_url: https://api.example.com/swagger.json
+    headers: "X-Old=val1,X-Another=val2"
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+	apis := result.APIs
+
+	// Map headers normalised to sorted CSV.
+	if apis[0].Headers != "X-Tenant=acme,X-Version=v2" {
+		t.Errorf("map headers = %q, want %q", apis[0].Headers, "X-Tenant=acme,X-Version=v2")
+	}
+	// Old string headers passed through unchanged.
+	if apis[1].Headers != "X-Old=val1,X-Another=val2" {
+		t.Errorf("string headers = %q, want %q", apis[1].Headers, "X-Old=val1,X-Another=val2")
+	}
+}
+
+func TestLoadMultiAPIConfig_FilterLists(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+apis:
+  - name: listfilter
+    spec_url: https://api.example.com/swagger.json
+    filter:
+      include_paths:
+        - "^/pet.*"
+        - "^/user.*"
+      exclude_methods:
+        - DELETE
+        - PUT
+  - name: legacyfilter
+    spec_url: https://api.example.com/swagger.json
+    include_paths: "^/pet.*"
+    exclude_methods: "DELETE"
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+	apis := result.APIs
+
+	// New list format → CSV.
+	if apis[0].Filter.IncludePaths != "^/pet.*,^/user.*" {
+		t.Errorf("list IncludePaths = %q, want %q", apis[0].Filter.IncludePaths, "^/pet.*,^/user.*")
+	}
+	if apis[0].Filter.ExcludeMethods != "DELETE,PUT" {
+		t.Errorf("list ExcludeMethods = %q, want %q", apis[0].Filter.ExcludeMethods, "DELETE,PUT")
+	}
+	// Legacy string format.
+	if apis[1].Filter.IncludePaths != "^/pet.*" {
+		t.Errorf("legacy IncludePaths = %q", apis[1].Filter.IncludePaths)
+	}
+	if apis[1].Filter.ExcludeMethods != "DELETE" {
+		t.Errorf("legacy ExcludeMethods = %q", apis[1].Filter.ExcludeMethods)
+	}
+}
+
+func TestLoadMultiAPIConfig_AuthTypes(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+apis:
+  - name: bearer-api
+    spec_url: https://api.example.com/swagger.json
+    auth:
+      type: bearer
+      token: tok123
+  - name: apikey-api
+    spec_url: https://api.example.com/swagger.json
+    auth:
+      type: api_key
+      key: key456
+      header: X-Custom-Key
+      in: query
+  - name: basic-api
+    spec_url: https://api.example.com/swagger.json
+    auth:
+      type: basic
+      user: alice
+      pass: s3cr3t
+  - name: oauth2-api
+    spec_url: https://api.example.com/swagger.json
+    auth:
+      type: oauth2
+      token_url: https://auth.example.com/token
+      client_id: cid
+      client_secret: csecret
+      scopes:
+        - "read:data"
+        - "write:data"
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+	apis := result.APIs
+
+	if len(apis) != 4 {
+		t.Fatalf("expected 4 APIs, got %d", len(apis))
+	}
+
+	// bearer
+	if apis[0].Auth.BearerToken != "tok123" {
+		t.Errorf("bearer token = %q", apis[0].Auth.BearerToken)
+	}
+	if apis[0].Auth.APIKeyHeader != "X-API-Key" {
+		t.Errorf("bearer default header = %q", apis[0].Auth.APIKeyHeader)
+	}
+
+	// api_key
+	if apis[1].Auth.APIKey != "key456" {
+		t.Errorf("api_key = %q", apis[1].Auth.APIKey)
+	}
+	if apis[1].Auth.APIKeyHeader != "X-Custom-Key" {
+		t.Errorf("api_key header = %q", apis[1].Auth.APIKeyHeader)
+	}
+	if apis[1].Auth.APIKeyIn != "query" {
+		t.Errorf("api_key in = %q", apis[1].Auth.APIKeyIn)
+	}
+
+	// basic
+	if apis[2].Auth.BasicUser != "alice" {
+		t.Errorf("basic user = %q", apis[2].Auth.BasicUser)
+	}
+	if apis[2].Auth.BasicPass != "s3cr3t" {
+		t.Errorf("basic pass = %q", apis[2].Auth.BasicPass)
+	}
+
+	// oauth2
+	if apis[3].Auth.OAuth2URL != "https://auth.example.com/token" {
+		t.Errorf("oauth2 url = %q", apis[3].Auth.OAuth2URL)
+	}
+	if apis[3].Auth.OAuth2ID != "cid" {
+		t.Errorf("oauth2 client_id = %q", apis[3].Auth.OAuth2ID)
+	}
+	if apis[3].Auth.OAuth2Secret != "csecret" {
+		t.Errorf("oauth2 secret = %q", apis[3].Auth.OAuth2Secret)
+	}
+	if apis[3].Auth.OAuth2Scopes != "read:data,write:data" {
+		t.Errorf("oauth2 scopes = %q, want %q", apis[3].Auth.OAuth2Scopes, "read:data,write:data")
+	}
+}
+
+func TestLoadMultiAPIConfig_BackwardCompat(t *testing.T) {
+	dir := t.TempDir()
+	// Old flat format should still parse correctly.
+	content := `
+apis:
+  - name: petstore
+    swagger_url: https://petstore.swagger.io/v2/swagger.json
+    base_url: https://petstore.swagger.io/v2
+    auth:
+      bearer_token: my-token
+    headers: "X-Tenant=acme"
+    include_paths: "^/pet.*"
+    exclude_methods: "DELETE"
+  - name: github
+    swagger_url: ./specs/github.yaml
+    auth:
+      api_key: ghp_xxx
+      api_key_header: Authorization
+      api_key_in: header
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+	apis := result.APIs
+
+	if len(apis) != 2 {
+		t.Fatalf("expected 2 APIs, got %d", len(apis))
+	}
+	if apis[0].SwaggerURL != "https://petstore.swagger.io/v2/swagger.json" {
+		t.Errorf("SwaggerURL = %q", apis[0].SwaggerURL)
+	}
+	if apis[0].Auth.BearerToken != "my-token" {
+		t.Errorf("BearerToken = %q", apis[0].Auth.BearerToken)
+	}
+	if apis[0].Headers != "X-Tenant=acme" {
+		t.Errorf("Headers = %q", apis[0].Headers)
+	}
+	if apis[0].Filter.IncludePaths != "^/pet.*" {
+		t.Errorf("IncludePaths = %q", apis[0].Filter.IncludePaths)
+	}
+	if apis[0].Filter.ExcludeMethods != "DELETE" {
+		t.Errorf("ExcludeMethods = %q", apis[0].Filter.ExcludeMethods)
+	}
+	if apis[1].Auth.APIKey != "ghp_xxx" {
+		t.Errorf("APIKey = %q", apis[1].Auth.APIKey)
+	}
+	if apis[1].Auth.APIKeyHeader != "Authorization" {
+		t.Errorf("APIKeyHeader = %q", apis[1].Auth.APIKeyHeader)
+	}
+}
+
+func TestLoadMultiAPIConfig_ServerBlock(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+server:
+  transport: sse
+  port: "9000"
+  log_level: warn
+  enable_ui: true
+  proxy_headers:
+    - Authorization
+    - X-Request-ID
+
+apis:
+  - name: dummy
+    spec_url: https://api.example.com/swagger.json
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+
+	srv := result.Server
+	if srv.Transport != "sse" {
+		t.Errorf("Transport = %q, want sse", srv.Transport)
+	}
+	if srv.Port != "9000" {
+		t.Errorf("Port = %q, want 9000", srv.Port)
+	}
+	if srv.LogLevel != "warn" {
+		t.Errorf("LogLevel = %q, want warn", srv.LogLevel)
+	}
+	if !srv.EnableUI {
+		t.Error("EnableUI = false, want true")
+	}
+	wantHeaders := []string{"Authorization", "X-Request-ID"}
+	if len(srv.ProxyHeaders) != len(wantHeaders) {
+		t.Fatalf("ProxyHeaders = %v, want %v", srv.ProxyHeaders, wantHeaders)
+	}
+	for i, h := range wantHeaders {
+		if srv.ProxyHeaders[i] != h {
+			t.Errorf("ProxyHeaders[%d] = %q, want %q", i, srv.ProxyHeaders[i], h)
+		}
+	}
+}
+
+func TestLoadMultiAPIConfig_SpecURLAlias(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+apis:
+  - name: new-style
+    spec_url: https://api.example.com/v1/swagger.json
+  - name: old-style
+    swagger_url: https://api.example.com/v2/swagger.json
+`
+	path := filepath.Join(dir, ".swagger-mcp.yaml")
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := config.LoadMultiAPIConfig(path)
+	if err != nil {
+		t.Fatalf("LoadMultiAPIConfig: %v", err)
+	}
+	apis := result.APIs
+
+	if apis[0].SwaggerURL != "https://api.example.com/v1/swagger.json" {
+		t.Errorf("spec_url not loaded: %q", apis[0].SwaggerURL)
+	}
+	if apis[1].SwaggerURL != "https://api.example.com/v2/swagger.json" {
+		t.Errorf("swagger_url (alias) not loaded: %q", apis[1].SwaggerURL)
+	}
+}
+

@@ -147,11 +147,12 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 		}
 	}
 	if configPath != "" {
-		apis, apisErr := config.LoadMultiAPIConfig(configPath)
+		multiFile, apisErr := config.LoadMultiAPIConfig(configPath)
 		if apisErr != nil {
 			return config.Config{}, apisErr
 		}
-		cfg.APIs = apis
+		cfg.APIs = multiFile.APIs
+		applyServerConfig(&cfg, multiFile.Server, cmd)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -159,6 +160,32 @@ func (o *serveOptions) toConfig(cmd *cobra.Command) (config.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// applyServerConfig applies YAML server block settings to cfg, respecting
+// already-set CLI flags and environment variables (flags and env vars take precedence).
+func applyServerConfig(cfg *config.Config, sc config.ServerConfig, cmd *cobra.Command) {
+	if !cmd.Flags().Changed("transport") && os.Getenv("SWAGGER_MCP_TRANSPORT") == "" && sc.Transport != "" {
+		cfg.Transport = sc.Transport
+	}
+	if !cmd.Flags().Changed("port") && os.Getenv("SWAGGER_MCP_PORT") == "" && sc.Port != "" {
+		cfg.Port = sc.Port
+	}
+	if !cmd.Flags().Changed("log-level") && os.Getenv("LOG_LEVEL") == "" && sc.LogLevel != "" {
+		cfg.LogLevel = sc.LogLevel
+	}
+	if !cmd.Flags().Changed("ui") && os.Getenv("SWAGGER_MCP_UI") == "" && sc.EnableUI {
+		cfg.EnableUI = sc.EnableUI
+	}
+	if len(sc.ProxyHeaders) > 0 {
+		joined := strings.Join(sc.ProxyHeaders, ",")
+		if !cmd.Flags().Changed("sse-headers") && os.Getenv("SWAGGER_MCP_SSE_HEADERS") == "" {
+			cfg.SseHeaders = joined
+		}
+		if !cmd.Flags().Changed("http-headers") && os.Getenv("SWAGGER_MCP_HTTP_HEADERS") == "" {
+			cfg.HTTPHeaders = joined
+		}
+	}
 }
 
 // envOr returns the flag value when the flag was explicitly set by the user,
