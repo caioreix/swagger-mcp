@@ -1,0 +1,19 @@
+# Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
+server:
+  transport: streamable-http
+  port: 8080
+  log_level: info
+  enable_ui: false
+
+apis:
+  - name: xquik
+    spec_url: https://xquik.com/openapi.json
+    auth:
+      type: api_key
+      key: ${XQUIK_API_KEY}
+      header: x-api-key
+      in: header
+    filter:
+      include_paths:
+        - "^/api/v1/x/.*"

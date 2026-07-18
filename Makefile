@@ -37,6 +37,8 @@ test:
 vet:
 	go vet ./...
 
+verify: build test vet
+
 fmt:
 	gofmt -w $(GOFILES)
 
@@ -64,5 +66,4 @@ evaluate: build
 		-s $(abspath testdata/petstore.json) \
 		$(if $(EVAL_OUTPUT),-o $(EVAL_OUTPUT)) \
 		../$(EVAL_FILE)
-
 
